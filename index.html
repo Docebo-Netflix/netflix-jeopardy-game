@@ -1,2548 +1,1305 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Netflix Jeopardy - Single Player Trivia Game</title>
-  <style>
-    /* ========================================
-       CSS VARIABLES & RESET
-       ======================================== */
-    :root {
-      --netflix-red: #e50914;
-      --netflix-red-dark: #b20710;
-      --netflix-red-light: #f40612;
-      --netflix-black: #000000;
-      --netflix-dark-gray: #141414;
-      --netflix-gray: #2f2f2f;
-      --netflix-white: #ffffff;
-      --ink: #ffffff;
-      --bg: #000000;
-      --bg-overlay: rgba(0, 0, 0, 0.95);
-      --tile-bg: #1a1a1a;
-      --tile-used: #444;
-      --correct: #46d369;
-      --incorrect: #e50914;
-      --spacing: 1rem;
-      --radius: 8px;
-      --shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
-      --transition: 0.2s ease;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Netflix Jeopardy</title>
+<!--
+  ============================================================================
+  NETFLIX JEOPARDY  -  single-file HTML/CSS/JS trivia game with xAPI (Docebo)
+  ============================================================================
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+  SETUP
+  -----
+  1. LRS credentials
+     Option A (recommended for Docebo): upload this file inside a Tin Can (xAPI)
+       package zip together with tincan.xml. Docebo then launches the game with
+       ?endpoint=...&auth=...&actor=...&activity_id=...&registration=... in the
+       URL. The game reads those automatically; nothing else to configure.
+     Option B: open the gear (Settings) and enter endpoint URL, key and secret.
+       The Basic auth header is computed from key:secret in the browser.
+     Option C: edit XAPI_DEFAULTS below.
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: var(--netflix-black);
-      color: var(--ink);
-      line-height: 1.6;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
+  2. Actor identity
+     Comes from the Docebo launch URL when available; otherwise from the
+     Settings panel (name + email -> mbox). Stored in localStorage only.
 
-    /* ========================================
-       HEADER
-       ======================================== */
-    header {
-      background: linear-gradient(180deg, var(--netflix-red) 0%, var(--netflix-red-dark) 100%);
-      padding: var(--spacing) calc(var(--spacing) * 2);
-      box-shadow: var(--shadow);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
+  3. Testing from Docebo
+     Settings -> "Test connection" fires a harmless `experienced` statement.
+     Watch it arrive in Docebo's xAPI statement viewer (Reports / LRS) or an
+     external LRS. Unsent statements are queued in localStorage and retried
+     with exponential backoff; "Retry queue" forces a flush.
 
-    h1 {
-      font-size: clamp(1.5rem, 4vw, 2.5rem);
-      color: var(--netflix-white);
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-      letter-spacing: 2px;
-      font-weight: 700;
-    }
+  4. Responsiveness inside the Docebo iframe
+     Every dimension is relative to the frame the game is given (vw / vh /
+     rem that scales with the frame). The board is a flex/grid layout that
+     fills whatever width and height the iframe has, so nothing is ever
+     clipped at desktop sizes; on very narrow frames (< 640px) the board
+     reflows into stacked category columns and scrolls.
 
-    .score-display {
-      font-size: clamp(1.2rem, 3vw, 1.8rem);
-      font-weight: bold;
-      color: var(--netflix-white);
-      text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
-    }
+  xAPI statements emitted
+     initialized  - new game / first load
+     answered     - every clue (response, success, duration, score, extensions)
+     scored       - running total after every clue
+     completed    - all 30 clues used (score, accuracy, avg response time)
+     experienced  - Settings "Test connection"
+  ============================================================================
+-->
+<style>
+  :root {
+    --nf-red: #e50914;
+    --nf-red-dark: #b20710;
+    --nf-black: #000000;
+    --nf-ink: #141414;
+    --nf-panel: #1f1f1f;
+    --nf-panel-2: #2b2b2b;
+    --nf-line: #3a3a3a;
+    --nf-gray: #b3b3b3;
+    --nf-white: #ffffff;
+    --ok: #46d369;
+    --warn: #f5c518;
+    --radius: 0.5rem;
+    --gap: clamp(3px, 0.55vw, 10px);
+    --shadow: 0 10px 30px rgba(0,0,0,.6);
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
 
-    .settings-btn {
-      background: var(--netflix-white);
-      color: var(--netflix-black);
-      border: none;
-      padding: 0.6rem 1.2rem;
-      border-radius: var(--radius);
-      cursor: pointer;
-      font-weight: bold;
-      font-size: 1rem;
-      transition: var(--transition);
-      box-shadow: var(--shadow);
-    }
+  /* The root font size follows the frame: in an iframe, vw/vh are the iframe's
+     own width/height, so every rem-based size scales with the frame. */
+  html {
+    font-size: clamp(11px, 0.6vw + 0.9vh, 19px);
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--nf-black);
+    color: var(--nf-white);
+    font-family: var(--font);
+    line-height: 1.35;
+  }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  .sr-only {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+  :focus-visible { outline: 3px solid var(--nf-white); outline-offset: 2px; }
 
-    .settings-btn:hover,
-    .settings-btn:focus {
-      background: var(--netflix-red-light);
-      color: var(--netflix-white);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
-    }
+  /* ---------------- Header ---------------- */
+  .topbar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.45rem clamp(0.5rem, 1.2vw, 1.25rem);
+    background: linear-gradient(180deg, #1a1a1a, #0a0a0a);
+    border-bottom: 2px solid var(--nf-red);
+  }
+  .brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 800; letter-spacing: 0.02em; font-size: 1.1rem; white-space: nowrap; }
+  .brand-n {
+    display: inline-grid; place-items: center;
+    width: 1.6em; height: 1.6em; border-radius: 0.2em;
+    background: var(--nf-red); color: #fff; font-weight: 900; font-size: 1.05em;
+    box-shadow: 0 2px 8px rgba(229,9,20,.45);
+  }
+  .brand small { font-weight: 500; color: var(--nf-gray); font-size: 0.7em; margin-left: 0.25rem; }
+  .score-wrap { margin-left: auto; display: flex; align-items: baseline; gap: 0.5rem; }
+  .score-label { color: var(--nf-gray); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .score { font-weight: 900; font-size: clamp(1.1rem, 1.5rem, 2rem); font-variant-numeric: tabular-nums; transition: transform .2s; }
+  .score.neg { color: var(--nf-red); }
+  .score.bump { transform: scale(1.12); }
+  .progress { color: var(--nf-gray); font-size: 0.8rem; white-space: nowrap; }
+  .icon-btn {
+    background: transparent; color: var(--nf-white); border: 1px solid var(--nf-line);
+    border-radius: 50%; width: 2.2rem; height: 2.2rem; display: grid; place-items: center; font-size: 1.15rem;
+  }
+  .icon-btn:hover { border-color: var(--nf-red); color: var(--nf-red); }
 
-    .settings-btn:focus-visible {
-      outline: 3px solid var(--netflix-white);
-      outline-offset: 2px;
-    }
+  /* ---------------- Board ---------------- */
+  main {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    padding: var(--gap);
+  }
+  .board {
+    flex: 1 1 auto; min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-rows: minmax(0, auto) repeat(5, minmax(2.2rem, 1fr));
+    grid-auto-flow: column;
+    gap: var(--gap);
+    overflow: auto;            /* only kicks in if the frame is too short for 5 rows */
+  }
+  .category { display: contents; }   /* children flow straight into the 6x6 grid */
+  .cat-head {
+    display: flex; align-items: center; justify-content: center;   /* vertically centered */
+    text-align: center;
+    min-height: 3.2em;
+    padding: 0.45em 0.4em;
+    background: linear-gradient(180deg, var(--nf-panel-2), var(--nf-panel));
+    border: 1px solid var(--nf-line);
+    border-bottom: 3px solid var(--nf-red);
+    border-radius: var(--radius) var(--radius) 0 0;
+    font-weight: 700;
+    font-size: clamp(0.7rem, min(1.35vw, 2.6vh), 1.15rem);
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+    position: sticky; top: 0; z-index: 2;   /* stays visible if the board ever scrolls */
+  }
+  .tile {
+    position: relative;
+    min-height: 0; width: 100%;
+    display: grid; place-items: center;
+    background: linear-gradient(180deg, #1c1c1c 0%, #0e0e0e 100%);
+    color: var(--nf-red);
+    border: 1px solid #2c2c2c;
+    border-radius: var(--radius);
+    font-weight: 900;
+    font-size: clamp(0.9rem, min(3vw, 6.5vh), 3rem);
+    letter-spacing: 0.02em;
+    text-shadow: 0 2px 6px rgba(0,0,0,.6);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 2px 6px rgba(0,0,0,.5);
+    transition: background .15s, color .15s, transform .15s;
+  }
+  .tile:hover:not(:disabled), .tile:focus-visible:not(:disabled) {
+    background: linear-gradient(180deg, #ff1f2a, var(--nf-red-dark));
+    color: #fff; transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(229,9,20,.4);
+  }
+  .tile:disabled, .tile.used {
+    cursor: default; color: #4a4a4a; text-decoration: line-through;
+    background: #0a0a0a; border-color: #1a1a1a; box-shadow: none;
+  }
+  .tile.used::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background: repeating-linear-gradient(135deg, rgba(255,255,255,.025) 0 6px, transparent 6px 12px);
+  }
+  .tile .dd-mark { position: absolute; inset: 0; } /* nothing visible: Daily Double stays secret */
 
-    /* ========================================
-       MAIN GAME BOARD
-       ======================================== */
-    main {
-      padding: calc(var(--spacing) * 2);
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
+  /* Narrow frames: stacked category columns, scrolling board */
+  @media (max-width: 640px) {
     .board {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 10px;
-      background: var(--netflix-dark-gray);
-      padding: 1.5rem;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-    }
-
-    .category-header {
-      background: linear-gradient(180deg, var(--netflix-red) 0%, var(--netflix-red-dark) 100%);
-      color: var(--netflix-white);
-      padding: 1rem;
-      text-align: center;
-      font-weight: bold;
-      font-size: clamp(0.9rem, 2vw, 1.2rem);
-      border-radius: var(--radius);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-      text-transform: none;
-      letter-spacing: 1px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 80px;
-    }
-
-    .tile {
-      background: linear-gradient(135deg, var(--netflix-gray) 0%, var(--tile-bg) 100%);
-      color: var(--netflix-white);
-      border: 3px solid var(--netflix-red);
-      padding: 2rem 1rem;
-      text-align: center;
-      font-size: clamp(1.5rem, 3vw, 2.5rem);
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: var(--radius);
-      transition: var(--transition);
-      position: relative;
-      min-height: 100px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .tile:hover:not(.used),
-    .tile:focus:not(.used) {
-      background: linear-gradient(135deg, var(--netflix-red) 0%, var(--netflix-red-dark) 100%);
-      transform: scale(1.05);
-      box-shadow: 0 8px 20px rgba(229, 9, 20, 0.5);
-    }
-
-    .tile:focus-visible {
-      outline: 4px solid var(--netflix-red-light);
-      outline-offset: 2px;
-    }
-
-    .tile.used {
-      background: var(--tile-used);
-      color: #888;
-      border-color: #666;
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
-
-    .tile.used::after {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 10%;
-      right: 10%;
-      height: 3px;
-      background: #666;
-      transform: translateY(-50%);
-    }
-
-    /* ========================================
-       MODAL DIALOG
-       ======================================== */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--bg-overlay);
-      z-index: 1000;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
-      overflow-y: auto;
-    }
-
-    .modal-overlay.active {
-      display: flex;
-    }
-
-    .modal {
-      background: linear-gradient(135deg, var(--netflix-dark-gray) 0%, var(--netflix-black) 100%);
-      border: 4px solid var(--netflix-red);
-      border-radius: var(--radius);
-      padding: 2rem;
-      max-width: 700px;
-      width: 100%;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
-      position: relative;
-      animation: modalSlideIn 0.3s ease;
-    }
-
-    @keyframes modalSlideIn {
-      from {
-        opacity: 0;
-        transform: translateY(-50px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1.5rem;
-      flex-wrap: wrap;
-      gap: 1rem;
-    }
-
-    .modal-category {
-      font-size: 1.3rem;
-      color: var(--netflix-red);
-      font-weight: bold;
-      text-transform: uppercase;
-    }
-
-    .modal-value {
-      font-size: 1.5rem;
-      color: var(--netflix-white);
-      font-weight: bold;
-    }
-
-    .modal-timer {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 1.2rem;
-      color: var(--netflix-white);
-    }
-
-    .timer-circle {
-      width: 50px;
-      height: 50px;
-      position: relative;
-    }
-
-    .timer-svg {
-      transform: rotate(-90deg);
-    }
-
-    .timer-circle-bg {
-      fill: none;
-      stroke: #333;
-      stroke-width: 4;
-    }
-
-    .timer-circle-progress {
-      fill: none;
-      stroke: var(--netflix-red);
-      stroke-width: 4;
-      stroke-linecap: round;
-      transition: stroke-dashoffset 0.1s linear;
-    }
-
-    .clue-text {
-      font-size: 1.3rem;
-      line-height: 1.8;
-      margin: 2rem 0;
-      padding: 1.5rem;
-      background: rgba(255, 255, 255, 0.05);
-      border-left: 4px solid var(--netflix-red);
-      border-radius: var(--radius);
-    }
-
-    .answer-section {
-      margin: 2rem 0;
-    }
-
-    .answer-section label {
-      display: block;
-      margin-bottom: 0.5rem;
-      font-weight: bold;
-      color: var(--netflix-red);
-    }
-
-    .answer-input {
-      width: 100%;
-      padding: 1rem;
-      font-size: 1.1rem;
-      border: 2px solid var(--netflix-red);
-      border-radius: var(--radius);
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--ink);
-      font-family: inherit;
-    }
-
-    .answer-input:focus {
-      outline: none;
-      border-color: var(--netflix-red-light);
-      box-shadow: 0 0 0 3px rgba(229, 9, 20, 0.3);
-    }
-
-    .button-group {
-      display: flex;
-      gap: 1rem;
-      margin-top: 1.5rem;
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      padding: 0.8rem 1.5rem;
-      font-size: 1rem;
-      font-weight: bold;
-      border: none;
-      border-radius: var(--radius);
-      cursor: pointer;
-      transition: var(--transition);
-      flex: 1;
-      min-width: 120px;
-    }
-
-    .btn-primary {
-      background: var(--netflix-red);
-      color: var(--netflix-white);
-    }
-
-    .btn-primary:hover,
-    .btn-primary:focus {
-      background: var(--netflix-red-light);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(229, 9, 20, 0.4);
-    }
-
-    .btn-secondary {
-      background: #555;
-      color: var(--ink);
-    }
-
-    .btn-secondary:hover,
-    .btn-secondary:focus {
-      background: #666;
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn:focus-visible {
-      outline: 3px solid var(--netflix-red-light);
-      outline-offset: 2px;
-    }
-
-    /* ========================================
-       SETTINGS PANEL
-       ======================================== */
-    .settings-panel {
-      display: none;
-      position: fixed;
-      top: 0;
-      right: 0;
-      width: 100%;
-      max-width: 500px;
-      height: 100%;
-      background: linear-gradient(135deg, var(--netflix-dark-gray) 0%, var(--netflix-black) 100%);
-      border-left: 4px solid var(--netflix-red);
-      box-shadow: -5px 0 20px rgba(0, 0, 0, 0.8);
-      z-index: 1001;
-      overflow-y: auto;
-      padding: 2rem;
-      animation: slideIn 0.3s ease;
-    }
-
-    .settings-panel.active {
-      display: block;
-    }
-
-    @keyframes slideIn {
-      from {
-        transform: translateX(100%);
-      }
-      to {
-        transform: translateX(0);
-      }
-    }
-
-    .settings-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 2rem;
-    }
-
-    .settings-header h2 {
-      color: var(--netflix-red);
-      font-size: 1.8rem;
-    }
-
-    .close-btn {
-      background: none;
-      border: none;
-      color: var(--ink);
-      font-size: 2rem;
-      cursor: pointer;
-      padding: 0;
-      width: 40px;
-      height: 40px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      transition: var(--transition);
-    }
-
-    .close-btn:hover,
-    .close-btn:focus {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    .settings-group {
-      margin-bottom: 2rem;
-    }
-
-    .settings-group label {
-      display: block;
-      margin-bottom: 0.5rem;
-      color: var(--netflix-red);
-      font-weight: bold;
-    }
-
-    .settings-group input,
-    .settings-group select {
-      width: 100%;
-      padding: 0.8rem;
-      font-size: 1rem;
-      border: 2px solid var(--netflix-red);
-      border-radius: var(--radius);
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--ink);
-      font-family: inherit;
-    }
-
-    .settings-group input:focus,
-    .settings-group select:focus {
-      outline: none;
-      border-color: var(--netflix-red-light);
-      box-shadow: 0 0 0 3px rgba(229, 9, 20, 0.3);
-    }
-
-    .checkbox-group {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .checkbox-group input[type="checkbox"] {
-      width: auto;
-    }
-
-    /* ========================================
-       TOAST NOTIFICATIONS
-       ======================================== */
-    .toast-container {
-      position: fixed;
-      top: 100px;
-      right: 20px;
-      z-index: 2000;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .toast {
-      background: var(--netflix-dark-gray);
-      color: var(--ink);
-      padding: 1rem 1.5rem;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      border-left: 4px solid var(--netflix-red);
-      animation: toastSlideIn 0.3s ease;
-      max-width: 400px;
-    }
-
-    .toast.correct {
-      border-left-color: var(--correct);
-      background: linear-gradient(90deg, rgba(70, 211, 105, 0.2) 0%, var(--netflix-dark-gray) 100%);
-    }
-
-    .toast.incorrect {
-      border-left-color: var(--incorrect);
-      background: linear-gradient(90deg, rgba(229, 9, 20, 0.3) 0%, var(--netflix-dark-gray) 100%);
-    }
-
-    .toast.daily-double {
-      border-left-color: var(--netflix-red-light);
-      background: linear-gradient(90deg, rgba(229, 9, 20, 0.4) 0%, var(--netflix-dark-gray) 100%);
-      font-weight: bold;
-    }
-
-    @keyframes toastSlideIn {
-      from {
-        opacity: 0;
-        transform: translateX(100%);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    /* ========================================
-       RESULTS SCREEN
-       ======================================== */
-    .results-screen {
-      text-align: center;
-      padding: 2rem;
-    }
-
-    .results-screen h2 {
-      font-size: 2.5rem;
-      color: var(--netflix-red);
-      margin-bottom: 2rem;
-    }
-
-    .results-stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1.5rem;
-      margin: 2rem 0;
-    }
-
-    .stat-card {
-      background: rgba(255, 255, 255, 0.05);
-      padding: 1.5rem;
-      border-radius: var(--radius);
-      border: 2px solid var(--netflix-red);
-    }
-
-    .stat-label {
-      color: var(--netflix-red);
-      font-size: 0.9rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 0.5rem;
-    }
-
-    .stat-value {
-      font-size: 2rem;
-      font-weight: bold;
-      color: var(--ink);
-    }
-
-    /* ========================================
-       RESPONSIVE DESIGN
-       ======================================== */
-    @media (max-width: 768px) {
-      .board {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        padding: 1rem;
-      }
-
-      .tile {
-        padding: 1.5rem 0.5rem;
-        min-height: 80px;
-      }
-
-      .modal {
-        padding: 1.5rem;
-      }
-
-      .settings-panel {
-        max-width: 100%;
-      }
-
-      .toast-container {
-        right: 10px;
-        left: 10px;
-      }
-
-      .toast {
-        max-width: 100%;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .board {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      header {
-        padding: 0.5rem 1rem;
-      }
-
-      h1 {
-        font-size: 1.2rem;
-      }
-
-      .score-display {
-        font-size: 1rem;
-      }
-    }
-
-    /* ========================================
-       ACCESSIBILITY
-       ======================================== */
-    @media (prefers-reduced-motion: reduce) {
-      *,
-      *::before,
-      *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-      }
-    }
-
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border-width: 0;
-    }
-
-    /* ========================================
-       WAGER DIALOG
-       ======================================== */
-    .wager-section {
-      text-align: center;
-      padding: 2rem 0;
-    }
-
-    .wager-section h3 {
-      font-size: 2rem;
-      color: var(--netflix-red-light);
-      margin-bottom: 1rem;
-      animation: pulse 1s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.7;
-      }
-    }
-
-    .wager-input-group {
-      margin: 2rem 0;
-    }
-
-    .wager-input-group label {
-      display: block;
-      margin-bottom: 1rem;
-      font-size: 1.2rem;
-      color: var(--netflix-red);
-    }
-
-    .wager-input-group input {
-      width: 100%;
-      max-width: 300px;
-      padding: 1rem;
-      font-size: 1.5rem;
-      text-align: center;
-      border: 3px solid var(--netflix-red);
-      border-radius: var(--radius);
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--ink);
-      font-weight: bold;
-    }
-
-    .wager-limits {
-      margin-top: 1rem;
-      color: var(--netflix-white);
-      font-size: 0.9rem;
-    }
-
-    /* ========================================
-       LOADING SPINNER
-       ======================================== */
-    .spinner {
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 3px solid rgba(255, 255, 255, 0.3);
-      border-radius: 50%;
-      border-top-color: var(--netflix-red);
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    /* ========================================
-       HINT BUTTON TOOLTIP
-       ======================================== */
-    .hint-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-
-    .hint-btn {
-      background: var(--netflix-gray);
-      color: var(--netflix-white);
-      border: 2px solid var(--netflix-red);
-      padding: 0.5rem 1rem;
-      border-radius: var(--radius);
-      cursor: help;
-      font-size: 0.9rem;
-      font-weight: bold;
-      transition: var(--transition);
-      position: relative;
-    }
-
-    .hint-btn:hover,
-    .hint-btn:focus {
-      background: var(--netflix-red);
-      transform: translateY(-2px);
-    }
-
-    .hint-tooltip {
-      visibility: hidden;
-      opacity: 0;
-      position: absolute;
-      bottom: 120%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--netflix-dark-gray);
-      color: var(--netflix-white);
-      padding: 1rem 1.5rem;
-      border-radius: var(--radius);
-      border: 2px solid var(--netflix-red);
-      white-space: nowrap;
-      z-index: 1000;
-      transition: opacity 0.3s, visibility 0.3s;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
-      font-size: 1rem;
-    }
-
-    .hint-tooltip::after {
-      content: "";
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      border: 8px solid transparent;
-      border-top-color: var(--netflix-red);
-    }
-
-    .hint-wrapper:hover .hint-tooltip,
-    .hint-btn:focus + .hint-tooltip {
-      visibility: visible;
-      opacity: 1;
-    }
-
-    .hint-used {
-      background: var(--netflix-gray);
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    /* ========================================
-       ANSWER FORMAT INSTRUCTIONS
-       ======================================== */
-    .answer-format-note {
-      font-size: 0.9rem;
-      color: var(--netflix-red);
-      margin-top: 0.5rem;
-      font-style: italic;
-    }
-  </style>
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: none;
+      grid-auto-flow: row;
+      align-content: start;
+      overflow: auto;
+    }
+    .category { display: flex; flex-direction: column; gap: var(--gap); }
+    .cat-head { position: static; min-height: 3.6em; }
+    .tile { min-height: 3rem; font-size: clamp(1rem, 6vw, 1.6rem); }
+  }
+  @media (max-width: 420px) {
+    .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .brand small { display: none; }
+  }
+
+  /* ---------------- Buttons ---------------- */
+  .btn {
+    background: var(--nf-red); color: #fff; border: 0; border-radius: 0.3rem;
+    padding: 0.6rem 1.1rem; font-weight: 700; letter-spacing: 0.01em;
+    box-shadow: 0 2px 8px rgba(229,9,20,.35);
+  }
+  .btn:hover:not(:disabled) { background: #ff1f2a; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  .btn-ghost {
+    background: transparent; color: var(--nf-gray); border: 1px solid var(--nf-line);
+    border-radius: 0.3rem; padding: 0.55rem 0.9rem; font-weight: 600;
+  }
+  .btn-ghost:hover:not(:disabled) { color: #fff; border-color: #777; }
+  .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+
+  /* ---------------- Dialog ---------------- */
+  .dialog {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    padding: clamp(0.4rem, 2vh, 1.5rem);
+    background: rgba(0,0,0,.78);
+    backdrop-filter: blur(3px);
+  }
+  .dialog[hidden] { display: none; }
+  .dlg-panel {
+    width: min(100%, 58rem);
+    max-height: 100%;
+    overflow: auto;
+    background: linear-gradient(180deg, #202020, #121212);
+    border: 1px solid #333;
+    border-top: 4px solid var(--nf-red);
+    border-radius: 0.75rem;
+    box-shadow: var(--shadow);
+    padding: clamp(0.75rem, 2.2vh, 1.6rem) clamp(0.9rem, 2.6vw, 2rem);
+  }
+  .dlg-head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+  .dlg-cat { font-weight: 700; color: var(--nf-gray); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.8rem; }
+  .dlg-value { font-weight: 900; color: var(--nf-red); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+  .dlg-value small { color: var(--nf-gray); font-weight: 600; font-size: 0.7rem; margin-left: 0.3rem; }
+  .dd-badge {
+    background: var(--warn); color: #000; font-weight: 900; font-size: 0.75rem;
+    padding: 0.2rem 0.5rem; border-radius: 0.25rem; letter-spacing: 0.06em;
+  }
+  .timer {
+    margin-left: auto; position: relative; width: clamp(2.8rem, 9vh, 4.2rem); aspect-ratio: 1; flex: 0 0 auto;
+  }
+  .timer svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .timer .t-bg { fill: none; stroke: #333; stroke-width: 3.5; }
+  .timer .t-fg { fill: none; stroke: var(--ok); stroke-width: 3.5; stroke-linecap: round;
+    stroke-dasharray: 100.53; stroke-dashoffset: 0; transition: stroke-dashoffset .25s linear, stroke .3s; }
+  .timer.warn .t-fg { stroke: var(--warn); }
+  .timer.danger .t-fg { stroke: var(--nf-red); }
+  .timer .t-num { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; }
+  .clue-text {
+    font-size: clamp(1.05rem, 1rem + 0.8vw, 1.7rem);
+    line-height: 1.35; font-weight: 500; margin: 0.4rem 0 0.9rem;
+    text-wrap: balance;
+  }
+
+  /* Hint button with rollover tooltip */
+  .hint-row { display: flex; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+  .hint-wrap { position: relative; display: inline-block; }
+  .hint-btn {
+    background: #262626; color: var(--warn); border: 1px solid #444; border-radius: 999px;
+    padding: 0.3rem 0.75rem; font-size: 0.85rem; font-weight: 700;
+  }
+  .hint-btn:hover:not(:disabled), .hint-btn:focus-visible:not(:disabled) { border-color: var(--warn); background: #2f2a14; }
+  .hint-btn:disabled { color: #8a8a8a; cursor: default; }
+  .hint-tip {
+    position: absolute; left: calc(100% + 0.6rem); top: 50%; z-index: 5;
+    width: max-content; max-width: min(26rem, 55vw);
+    background: #2b2b2b; color: #eee; border: 1px solid #555; border-radius: 0.5rem;
+    padding: 0.55rem 0.75rem; font-size: 0.85rem; line-height: 1.3;
+    box-shadow: 0 6px 18px rgba(0,0,0,.5);
+    opacity: 0; transform: translate(-4px, -50%); pointer-events: none; transition: opacity .15s, transform .15s;
+  }
+  .hint-tip::after {
+    content: ""; position: absolute; right: 100%; top: 50%; margin-top: -6px;
+    border: 6px solid transparent; border-right-color: #555;
+  }
+  .hint-wrap:hover .hint-tip, .hint-btn:focus-visible + .hint-tip, .hint-wrap.show .hint-tip { opacity: 1; transform: translate(0, -50%); }
+  @media (max-width: 640px) {   /* narrow frames: tooltip sits above the button instead */
+    .hint-tip { left: 0; top: auto; bottom: calc(100% + 0.5rem); max-width: 80vw; transform: translate(0, 4px); }
+    .hint-tip::after { right: auto; left: 1rem; top: 100%; margin-top: 0; border-right-color: transparent; border-top-color: #555; }
+    .hint-wrap:hover .hint-tip, .hint-btn:focus-visible + .hint-tip, .hint-wrap.show .hint-tip { transform: none; }
+  }
+  .hint-reveal {
+    flex: 1 1 14rem; background: #2f2a14; border: 1px solid #5b4d12; color: #ffe58a;
+    border-radius: 0.4rem; padding: 0.45rem 0.7rem; font-size: 0.92rem;
+  }
+  .hint-reveal[hidden] { display: none; }
+
+  .answer-form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .answer-form input {
+    flex: 1 1 14rem; min-width: 0;
+    background: #0d0d0d; color: #fff; border: 1px solid #444; border-radius: 0.35rem;
+    padding: 0.65rem 0.8rem; font-size: 1.05rem;
+  }
+  .answer-form input:focus-visible { border-color: var(--nf-red); outline: 2px solid #fff; outline-offset: 0; }
+  .answer-form input.shake { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-4px);} 75% { transform: translateX(4px);} }
+  .format-note { color: var(--nf-gray); font-size: 0.82rem; margin: 0.5rem 0 0; }
+  .form-error { color: var(--warn); font-weight: 600; font-size: 0.9rem; margin: 0.4rem 0 0; }
+  .form-error[hidden] { display: none; }
+  .dlg-foot { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.9rem; flex-wrap: wrap; }
+
+  .result { margin-top: 0.6rem; padding: 0.9rem 1rem; border-radius: 0.5rem; border: 1px solid #333; background: #181818; }
+  .result[hidden] { display: none; }
+  .result.ok { border-color: var(--ok); }
+  .result.bad { border-color: var(--nf-red); }
+  .result h3 { margin: 0 0 0.35rem; font-size: 1.15rem; }
+  .result .correct-line { color: var(--nf-gray); }
+  .result .correct-line strong { color: #fff; }
+  .result .delta { font-weight: 900; font-variant-numeric: tabular-nums; }
+  .result.ok .delta { color: var(--ok); }
+  .result.bad .delta { color: var(--nf-red); }
+
+  /* Wager dialog */
+  .wager-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.75rem; }
+  .wager-form input { width: 9rem; background: #0d0d0d; color: #fff; border: 1px solid #444; border-radius: 0.35rem; padding: 0.6rem 0.8rem; font-size: 1.2rem; font-weight: 800; }
+  .quick { display: flex; gap: 0.4rem; }
+  .dlg-title { margin: 0 0 0.3rem; font-size: 1.6rem; font-weight: 900; }
+  .dlg-title.dd { color: var(--warn); }
+  .muted { color: var(--nf-gray); }
+
+  /* Results */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.6rem; margin: 1rem 0; }
+  .stats div { background: #181818; border: 1px solid #333; border-radius: 0.5rem; padding: 0.7rem; text-align: center; }
+  .stats dt { color: var(--nf-gray); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .stats dd { margin: 0.2rem 0 0; font-weight: 900; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+  .final-score { font-size: clamp(2rem, 6vh, 3.2rem); font-weight: 900; margin: 0; color: var(--nf-red); }
+  .missed { margin-top: 1rem; border-top: 1px solid #333; padding-top: 0.8rem; }
+  .missed[hidden] { display: none; }
+  .missed ul { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.5rem; }
+  .missed li { background: #181818; border: 1px solid #333; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.92rem; }
+  .missed li .q { color: var(--nf-gray); }
+
+  /* ---------------- Settings slide-over ---------------- */
+  .settings {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 60;
+    width: min(100%, 26rem);
+    background: #161616; border-left: 1px solid #333; box-shadow: var(--shadow);
+    padding: 1rem 1.1rem; overflow: auto;
+    transform: translateX(0); transition: transform .25s;
+  }
+  .settings[hidden] { display: none; }
+  .settings h2 { margin: 0 0 0.5rem; font-size: 1.3rem; display: flex; align-items: center; }
+  .settings h2 .icon-btn { margin-left: auto; }
+  .settings fieldset { border: 1px solid #333; border-radius: 0.5rem; padding: 0.6rem 0.8rem 0.8rem; margin: 0 0 0.8rem; }
+  .settings legend { color: var(--nf-gray); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; padding: 0 0.3rem; }
+  .settings label { display: block; font-size: 0.85rem; color: #ddd; margin-top: 0.5rem; }
+  .settings input[type=text], .settings input[type=email], .settings input[type=url], .settings input[type=password] {
+    width: 100%; margin-top: 0.2rem; background: #0d0d0d; color: #fff; border: 1px solid #444; border-radius: 0.3rem; padding: 0.45rem 0.6rem;
+  }
+  .settings input:disabled { opacity: .55; }
+  .settings .check { display: flex; align-items: center; gap: 0.5rem; }
+  .settings .check input { width: 1.1rem; height: 1.1rem; accent-color: var(--nf-red); }
+  .settings .range { display: flex; align-items: center; gap: 0.6rem; }
+  .settings .range input { flex: 1; accent-color: var(--nf-red); }
+  .settings .btns { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+  .lms-note { background: #152a17; border: 1px solid #2f6b37; color: #bfe8c4; border-radius: 0.4rem; padding: 0.5rem 0.7rem; font-size: 0.85rem; }
+  .lms-note[hidden] { display: none; }
+  .xapi-status { font-size: 0.82rem; color: var(--nf-gray); margin: 0.6rem 0 0; min-height: 1.2em; }
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 55; }
+  .scrim[hidden] { display: none; }
+
+  /* ---------------- Toasts ---------------- */
+  .toasts { position: fixed; top: 0.6rem; left: 50%; transform: translateX(-50%); z-index: 70; display: grid; gap: 0.4rem; pointer-events: none; width: min(92vw, 28rem); }
+  .toast {
+    background: #222; color: #fff; border-left: 4px solid var(--nf-gray); border-radius: 0.4rem;
+    padding: 0.55rem 0.8rem; font-weight: 600; font-size: 0.9rem; box-shadow: var(--shadow);
+    animation: toast-in .2s ease-out;
+  }
+  .toast.ok { border-color: var(--ok); }
+  .toast.bad { border-color: var(--nf-red); }
+  .toast.warn { border-color: var(--warn); }
+  .toast.dd { border-color: var(--warn); background: #2f2a14; color: #ffe58a; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(-6px);} to { opacity: 1; transform: none;} }
+
+  /* ---------------- Confetti ---------------- */
+  .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 80; overflow: hidden; }
+  .confetti span {
+    position: absolute; top: -2vh; width: 0.6rem; height: 0.9rem; border-radius: 2px;
+    animation: fall 1.6s ease-in forwards;
+  }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+    .confetti { display: none; }
+  }
+</style>
 </head>
 <body>
-  <!-- HEADER -->
-  <header>
-    <h1>🎬 NETFLIX JEOPARDY</h1>
-    <div class="score-display" aria-live="polite" aria-atomic="true">
-      Score: $<span id="score">0</span>
-    </div>
-    <button class="settings-btn" id="settingsBtn" aria-label="Open Settings">
-      ⚙️ Settings
-    </button>
-  </header>
 
-  <!-- MAIN GAME BOARD -->
-  <main>
-    <div class="board" role="grid" aria-label="Jeopardy Game Board" id="gameBoard">
-      <!-- Board will be generated by JavaScript -->
-    </div>
-  </main>
-
-  <!-- MODAL OVERLAY -->
-  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="modal" id="modalContent">
-      <!-- Modal content will be generated dynamically -->
-    </div>
+<header class="topbar">
+  <div class="brand"><span class="brand-n" aria-hidden="true">N</span>Netflix Jeopardy <small>Round 1</small></div>
+  <div class="progress" id="progress" aria-label="Clues remaining"></div>
+  <div class="score-wrap">
+    <span class="score-label">Score</span>
+    <span class="score" id="score" role="status" aria-live="polite">$0</span>
   </div>
+  <button class="icon-btn" id="btnSettings" aria-label="Open settings" aria-expanded="false" aria-controls="settings">&#9881;</button>
+</header>
 
-  <!-- SETTINGS PANEL -->
-  <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <div class="settings-header">
-      <h2 id="settingsTitle">Settings</h2>
-      <button class="close-btn" id="closeSettings" aria-label="Close Settings">×</button>
+<main>
+  <section class="board" id="board" aria-label="Game board: 6 categories, 5 clues each"></section>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+<div class="sr-only" id="announcer" aria-live="polite"></div>
+
+<div class="dialog" id="dialog" hidden>
+  <div class="dlg-panel" id="dlgPanel" role="dialog" aria-modal="true" aria-labelledby="dlgLabel"></div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="settings" id="settings" hidden aria-label="Settings">
+  <h2>Settings <button class="icon-btn" id="btnCloseSettings" aria-label="Close settings">&times;</button></h2>
+  <p class="lms-note" id="lmsNote" hidden>Launched from the LMS: endpoint, credentials and player identity were supplied by Docebo and can't be edited here.</p>
+  <form id="settingsForm">
+    <fieldset>
+      <legend>Player (xAPI actor)</legend>
+      <label>Display name <input type="text" id="sName" autocomplete="name"></label>
+      <label>Email <input type="email" id="sEmail" autocomplete="email" placeholder="you@example.com"></label>
+    </fieldset>
+    <fieldset>
+      <legend>LRS (Docebo)</legend>
+      <label>Endpoint URL <input type="url" id="sEndpoint" placeholder="https://your-domain.docebosaas.com/lrs/xapi/"></label>
+      <label>Key <input type="text" id="sKey" autocomplete="off"></label>
+      <label>Secret <input type="password" id="sSecret" autocomplete="off"></label>
+    </fieldset>
+    <fieldset>
+      <legend>Gameplay</legend>
+      <label class="check"><input type="checkbox" id="sHints"> Hints available (halves the clue value, no penalty on a miss)</label>
+      <label class="check"><input type="checkbox" id="sRequireQ"> Require responses phrased as a question</label>
+      <label class="check"><input type="checkbox" id="sSound"> Sound effects</label>
+      <label>Timer: <span id="sTimerVal">30</span> seconds
+        <span class="range"><input type="range" id="sTimer" min="15" max="45" step="5"></span>
+      </label>
+    </fieldset>
+    <div class="btns">
+      <button type="submit" class="btn btn-sm">Save</button>
+      <button type="button" class="btn-ghost btn-sm" id="btnTest">Test connection</button>
+      <button type="button" class="btn-ghost btn-sm" id="btnRetry">Retry queue (<span id="queueCount">0</span>)</button>
+      <button type="button" class="btn-ghost btn-sm" id="btnExport">Export session</button>
+      <button type="button" class="btn-ghost btn-sm" id="btnNewGame">New game</button>
     </div>
+    <p class="xapi-status" id="xapiStatus"></p>
+  </form>
+</aside>
 
-    <div class="settings-group">
-      <label for="playerName">Player Name</label>
-      <input type="text" id="playerName" placeholder="Your Name" />
-    </div>
+<script>
+(() => {
+"use strict";
 
-    <div class="settings-group">
-      <label for="playerEmail">Player Email</label>
-      <input type="email" id="playerEmail" placeholder="your.email@example.com" />
-    </div>
+/* =============================== CONFIG =============================== */
+// Edit these if you are not launching from Docebo and don't want to use the Settings panel.
+const XAPI_DEFAULTS = {
+  endpoint: "",                       // e.g. "https://your-domain.docebosaas.com/lrs/xapi/"
+  key: "",
+  secret: "",
+  actorName: "Player",
+  actorEmail: "player@example.com",
+  activityId: "https://learn.netflix.net/xapi/activities/netflix-jeopardy",
+  appName: "Netflix Jeopardy (Single File)",
+};
+const EXT = "https://learn.netflix.net/xapi/ext/";   // extension keys must be IRIs
+const VERBS = {
+  initialized: "http://adlnet.gov/expapi/verbs/initialized",
+  answered:    "http://adlnet.gov/expapi/verbs/answered",
+  scored:      "http://adlnet.gov/expapi/verbs/scored",
+  completed:   "http://adlnet.gov/expapi/verbs/completed",
+  experienced: "http://adlnet.gov/expapi/verbs/experienced",
+};
+const VALUES = [200, 400, 600, 800, 1000];
+const STORAGE = { state: "nfj_state_v2", settings: "nfj_settings_v2", queue: "nfj_xapi_queue_v2", log: "nfj_xapi_log_v2" };
 
-    <div class="settings-group">
-      <label for="lrsEndpoint">LRS Endpoint URL</label>
-      <input type="url" id="lrsEndpoint" placeholder="https://your-docebo-lrs.com/xapi/" />
-    </div>
+/* =============================== DATA ================================= */
+// Each clue: value, difficultyRank, prompt, answerPrefix (for the reveal), correctAnswer,
+// acceptedAlternates, hint, sourceNote. Prompts stay mostly within season 1.
+const CATEGORY_POOL = [
+  { name: "Stranger Things", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Eleven's favorite frozen breakfast treat, which she first tastes at Benny's diner.", answerPrefix: "What are", correctAnswer: "Eggos", acceptedAlternates: ["Eggo", "Eggo waffles", "waffles", "frozen waffles"], hint: "A toaster staple with a two-syllable brand name.", sourceNote: "S1" },
+    { value: 400, difficultyRank: 2, prompt: "This fictional Indiana town is home to the kids, the arcade, and the mysterious lab.", answerPrefix: "What is", correctAnswer: "Hawkins", acceptedAlternates: ["Hawkins Indiana"], hint: "The town shares its name with the lab.", sourceNote: "S1" },
+    { value: 600, difficultyRank: 3, prompt: "In Hawkins, this shadowy research facility is ground zero for portals to the Upside Down.", answerPrefix: "What is", correctAnswer: "Hawkins National Laboratory", acceptedAlternates: ["Hawkins Lab", "HNL", "the lab", "Hawkins Laboratory"], hint: "Initials: H.N.L.", sourceNote: "S1" },
+    { value: 800, difficultyRank: 4, prompt: "Joyce Byers talks to her missing son through these holiday decorations and an alphabet painted on the wall.", answerPrefix: "What are", correctAnswer: "Christmas lights", acceptedAlternates: ["lights", "string lights", "fairy lights", "the lights"], hint: "You string them up in December.", sourceNote: "S1 E3" },
+    { value: 1000, difficultyRank: 5, prompt: "The boys name the creature from the Upside Down after this Dungeons & Dragons demon prince.", answerPrefix: "What is", correctAnswer: "the Demogorgon", acceptedAlternates: ["Demogorgon"], hint: "A two-headed demon from D&D lore; starts with D.", sourceNote: "S1" },
+  ]},
+  { name: "The Witcher", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Henry Cavill's white-haired monster hunter, also known as the White Wolf.", answerPrefix: "Who is", correctAnswer: "Geralt of Rivia", acceptedAlternates: ["Geralt"], hint: "First name starts with G.", sourceNote: "S1" },
+    { value: 400, difficultyRank: 2, prompt: "Geralt gives every horse he has ever owned this same name.", answerPrefix: "What is", correctAnswer: "Roach", acceptedAlternates: [], hint: "Also an unwelcome kitchen insect.", sourceNote: "S1" },
+    { value: 600, difficultyRank: 3, prompt: "This bard writes the earworm \"Toss a Coin to Your Witcher.\"", answerPrefix: "Who is", correctAnswer: "Jaskier", acceptedAlternates: ["Dandelion"], hint: "Called Dandelion in the English-language books and games.", sourceNote: "S1 E2" },
+    { value: 800, difficultyRank: 4, prompt: "The princess of Cintra bound to Geralt by the Law of Surprise.", answerPrefix: "Who is", correctAnswer: "Ciri", acceptedAlternates: ["Cirilla", "Princess Cirilla", "Ciri of Cintra", "Princess Ciri"], hint: "Nicknamed the Lion Cub of Cintra.", sourceNote: "S1" },
+    { value: 1000, difficultyRank: 5, prompt: "The Witcher novels were written by this Polish author.", answerPrefix: "Who is", correctAnswer: "Andrzej Sapkowski", acceptedAlternates: ["Sapkowski"], hint: "Surname starts with S and ends with -ski.", sourceNote: "Books" },
+  ]},
+  { name: "Money Heist (La Casa de Papel)", clues: [
+    { value: 200, difficultyRank: 1, prompt: "The robbers wear masks bearing the face of this Spanish surrealist painter.", answerPrefix: "Who is", correctAnswer: "Salvador Dalí", acceptedAlternates: ["Dali", "Salvador Dali"], hint: "Famous for melting clocks and a very pointy mustache.", sourceNote: "S1" },
+    { value: 400, difficultyRank: 2, prompt: "The mastermind who recruits and trains the crew goes by this academic title.", answerPrefix: "Who is", correctAnswer: "the Professor", acceptedAlternates: ["Professor", "El Profesor", "Profesor"], hint: "He could be teaching at a university.", sourceNote: "S1" },
+    { value: 600, difficultyRank: 3, prompt: "Tokyo, Berlin, Nairobi, Rio: every robber's code name is one of these.", answerPrefix: "What are", correctAnswer: "cities", acceptedAlternates: ["city", "city names", "world cities", "capital cities", "a city"], hint: "Places you'd find on a world map, but not countries.", sourceNote: "S1" },
+    { value: 800, difficultyRank: 4, prompt: "The first heist targets this institution, where the crew prints their own money instead of stealing it.", answerPrefix: "What is", correctAnswer: "the Royal Mint of Spain", acceptedAlternates: ["Royal Mint", "the Mint", "Spanish Royal Mint", "Fábrica Nacional de Moneda y Timbre", "Royal Mint Spain"], hint: "Where a country manufactures its banknotes and coins.", sourceNote: "S1" },
+    { value: 1000, difficultyRank: 5, prompt: "This Italian anti-fascist folk song becomes the crew's anthem.", answerPrefix: "What is", correctAnswer: "Bella Ciao", acceptedAlternates: ["Bella Chao"], hint: "Two words; the second is Italian for goodbye.", sourceNote: "S1" },
+  ]},
+  { name: "Squid Game", clues: [
+    { value: 200, difficultyRank: 1, prompt: "The first game the 456 players face, overseen by a giant singing doll.", answerPrefix: "What is", correctAnswer: "Red Light, Green Light", acceptedAlternates: ["Red Light Green Light", "Green Light Red Light", "Mugunghwa"], hint: "Freeze when the doll turns around.", sourceNote: "S1 E1" },
+    { value: 400, difficultyRank: 2, prompt: "The number worn by protagonist Seong Gi-hun.", answerPrefix: "What is", correctAnswer: "456", acceptedAlternates: ["Player 456", "four fifty six", "four hundred fifty six"], hint: "Same as the number of players.", sourceNote: "S1" },
+    { value: 600, difficultyRank: 3, prompt: "Players must carve a shape out of this brittle Korean honeycomb candy; the umbrella is the cruel one.", answerPrefix: "What is", correctAnswer: "dalgona", acceptedAlternates: ["dalgona candy", "honeycomb", "honeycomb candy", "ppopgi", "sugar honeycomb", "honeycomb toffee"], hint: "Korean sugar candy whose name starts with D.", sourceNote: "S1 E3" },
+    { value: 800, difficultyRank: 4, prompt: "The masked guards' ranks are marked by these three shapes, which also form the show's logo.", answerPrefix: "What are", correctAnswer: "circle, triangle and square", acceptedAlternates: ["circle triangle square", "circle triangle and square", "triangle circle square", "square circle triangle", "square triangle circle", "triangle square circle", "circle square triangle", "shapes", "geometric shapes"], hint: "Three basic geometric shapes.", sourceNote: "S1" },
+    { value: 1000, difficultyRank: 5, prompt: "Squid Game's creator, who wrote and directed every episode of season 1.", answerPrefix: "Who is", correctAnswer: "Hwang Dong-hyuk", acceptedAlternates: ["Hwang Dong hyuk", "Dong-hyuk Hwang", "Hwang"], hint: "Surname: Hwang.", sourceNote: "S1" },
+  ]},
+  { name: "Bridgerton", clues: [
+    { value: 200, difficultyRank: 1, prompt: "The anonymous gossip columnist whose pamphlets scandalize the ton.", answerPrefix: "Who is", correctAnswer: "Lady Whistledown", acceptedAlternates: ["Whistledown"], hint: "Lady W.", sourceNote: "S1" },
+    { value: 400, difficultyRank: 2, prompt: "The eight Bridgerton siblings are named alphabetically; this eldest son holds the title of viscount.", answerPrefix: "Who is", correctAnswer: "Anthony", acceptedAlternates: ["Anthony Bridgerton", "Viscount Bridgerton", "Lord Bridgerton"], hint: "First letter of the alphabet.", sourceNote: "S1" },
+    { value: 600, difficultyRank: 3, prompt: "Daphne's season-one match, the brooding Duke of Hastings.", answerPrefix: "Who is", correctAnswer: "Simon Basset", acceptedAlternates: ["Simon", "the Duke of Hastings", "Duke of Hastings", "Simon Bassett", "Duke Hastings"], hint: "First name Simon.", sourceNote: "S1" },
+    { value: 800, difficultyRank: 4, prompt: "Bridgerton adapts the Regency romance novels of this American author.", answerPrefix: "Who is", correctAnswer: "Julia Quinn", acceptedAlternates: ["Quinn"], hint: "Surname rhymes with win.", sourceNote: "Books" },
+    { value: 1000, difficultyRank: 5, prompt: "Her company Shondaland brought Bridgerton to Netflix as its first scripted series there.", answerPrefix: "Who is", correctAnswer: "Shonda Rhimes", acceptedAlternates: ["Shonda", "Rhimes"], hint: "She also created Grey's Anatomy.", sourceNote: "Production" },
+  ]},
+  { name: "Black Mirror", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Black Mirror is this type of series: every episode has a new cast, setting and story.", answerPrefix: "What is", correctAnswer: "an anthology", acceptedAlternates: ["anthology", "anthology series", "an anthology series"], hint: "Starts with 'anth'.", sourceNote: "Format" },
+    { value: 400, difficultyRank: 2, prompt: "The British satirist who created the series.", answerPrefix: "Who is", correctAnswer: "Charlie Brooker", acceptedAlternates: ["Brooker"], hint: "Shares a first name with Chaplin.", sourceNote: "Creator" },
+    { value: 600, difficultyRank: 3, prompt: "In \"Nosedive,\" everyone rates everyone else out of this many stars.", answerPrefix: "What is", correctAnswer: "five", acceptedAlternates: ["5", "five stars", "5 stars"], hint: "The same as a perfect ride-share rating.", sourceNote: "S3 E1" },
+    { value: 800, difficultyRank: 4, prompt: "This 2018 interactive film let viewers choose the fate of a young programmer in 1984.", answerPrefix: "What is", correctAnswer: "Bandersnatch", acceptedAlternates: ["Black Mirror: Bandersnatch", "Black Mirror Bandersnatch"], hint: "Named after a creature from Lewis Carroll.", sourceNote: "2018" },
+    { value: 1000, difficultyRank: 5, prompt: "Before moving to Netflix, Black Mirror first aired on this British broadcaster.", answerPrefix: "What is", correctAnswer: "Channel 4", acceptedAlternates: ["Channel Four"], hint: "A number between three and five.", sourceNote: "2011" },
+  ]},
+  { name: "Netflix Original Films", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Sandra Bullock must keep a blindfold on to survive in this 2018 thriller.", answerPrefix: "What is", correctAnswer: "Bird Box", acceptedAlternates: [], hint: "A feathered animal plus a container.", sourceNote: "2018" },
+    { value: 400, difficultyRank: 2, prompt: "Chris Hemsworth plays mercenary Tyler Rake in this 2020 action film.", answerPrefix: "What is", correctAnswer: "Extraction", acceptedAlternates: [], hint: "Something a dentist does.", sourceNote: "2020" },
+    { value: 600, difficultyRank: 3, prompt: "Alfonso Cuarón's black-and-white memory piece about 1970s Mexico City, named after a neighborhood.", answerPrefix: "What is", correctAnswer: "Roma", acceptedAlternates: [], hint: "Also the Italian name of Italy's capital.", sourceNote: "2018" },
+    { value: 800, difficultyRank: 4, prompt: "Martin Scorsese's 2019 mob epic reuniting De Niro, Pacino and Pesci.", answerPrefix: "What is", correctAnswer: "The Irishman", acceptedAlternates: ["Irishman"], hint: "A nationality plus 'man'.", sourceNote: "2019" },
+    { value: 1000, difficultyRank: 5, prompt: "This 2022 German-language WWI film won four Oscars, including Best International Feature.", answerPrefix: "What is", correctAnswer: "All Quiet on the Western Front", acceptedAlternates: ["Im Westen nichts Neues", "All Quiet"], hint: "Based on the Erich Maria Remarque novel.", sourceNote: "2022" },
+  ]},
+  { name: "International Hits on Netflix", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Netflix's first German original: a small town, a cave, and tangled time travel.", answerPrefix: "What is", correctAnswer: "Dark", acceptedAlternates: [], hint: "The opposite of light.", sourceNote: "2017" },
+    { value: 400, difficultyRank: 2, prompt: "In this K-drama, a South Korean heiress paraglides into North Korea and falls for an army captain.", answerPrefix: "What is", correctAnswer: "Crash Landing on You", acceptedAlternates: ["Crash Landing", "CLOY"], hint: "The title describes a very rough touchdown.", sourceNote: "2019" },
+    { value: 600, difficultyRank: 3, prompt: "Omar Sy plays a gentleman thief inspired by Arsène Lupin in this French series.", answerPrefix: "What is", correctAnswer: "Lupin", acceptedAlternates: [], hint: "Same name as the fictional thief.", sourceNote: "2021" },
+    { value: 800, difficultyRank: 4, prompt: "This Spanish teen drama unfolds at the exclusive private school Las Encinas.", answerPrefix: "What is", correctAnswer: "Elite", acceptedAlternates: ["Élite"], hint: "Means the best of the best.", sourceNote: "2018" },
+    { value: 1000, difficultyRank: 5, prompt: "Netflix's first Brazilian original, in which 20-year-olds compete for a place in a utopia called the Offshore.", answerPrefix: "What is", correctAnswer: "3%", acceptedAlternates: ["three percent", "3 percent", "Three Percent"], hint: "A very small percentage.", sourceNote: "2016" },
+  ]},
+];
 
-    <div class="settings-group">
-      <label for="lrsKey">LRS Key</label>
-      <input type="text" id="lrsKey" placeholder="Your LRS Key" />
-    </div>
+/* ============================== UTILITIES ============================= */
+const $ = (sel, root = document) => root.querySelector(sel);
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
+const slug = s => s.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+const money = n => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US");
+const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+const isoDuration = ms => { const s = Math.max(0, ms) / 1000; if (s < 60) return `PT${s.toFixed(1)}S`; const m = Math.floor(s / 60); return `PT${m}M${Math.round(s - m * 60)}S`; };
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const reducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    <div class="settings-group">
-      <label for="lrsSecret">LRS Secret</label>
-      <input type="password" id="lrsSecret" placeholder="Your LRS Secret" />
-    </div>
+const normalize = s => String(s || "")
+  .toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/&/g, " and ")
+  .replace(/%/g, " percent ")
+  .replace(/[^a-z0-9\s]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+const QUESTION_PREFIX = /^(who|what|where|when|which|why|how)s?(\s+(is|are|was|were|does|did|do|has|have|s))?\s+/;
+const ARTICLES = /^(a|an|the)\s+/;
+const stripQuestionAndArticles = s => normalize(s).replace(QUESTION_PREFIX, "").replace(ARTICLES, "").trim();
+const isQuestionFormat = raw => /^\s*(who|what|where|when|which|why|how)\b/i.test(raw);
 
-    <div class="settings-group">
-      <label for="timerDuration">Timer Duration (seconds)</label>
-      <select id="timerDuration">
-        <option value="15">15 seconds</option>
-        <option value="20">20 seconds</option>
-        <option value="30" selected>30 seconds</option>
-        <option value="45">45 seconds</option>
-      </select>
-    </div>
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function answerMatches(raw, clue) {
+  const user = stripQuestionAndArticles(raw);
+  if (!user) return false;
+  const candidates = [clue.correctAnswer, ...(clue.acceptedAlternates || [])].map(stripQuestionAndArticles).filter(Boolean);
+  return candidates.some(c => {
+    if (c === user) return true;
+    if (/^\d+$/.test(c) || /^\d+$/.test(user)) return false;  // numbers must match exactly
+    const tol = c.length <= 4 ? 0 : c.length <= 8 ? 1 : 2;
+    return levenshtein(user, c) <= tol;
+  });
+}
+const questionForm = clue => `${clue.answerPrefix || "What is"} ${clue.correctAnswer}?`;
 
-    <div class="settings-group">
-      <div class="checkbox-group">
-        <input type="checkbox" id="hintsEnabled" />
-        <label for="hintsEnabled">Enable Hints (halves score)</label>
-      </div>
-    </div>
+/* =============================== STORAGE ============================== */
+const storage = {
+  get(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
+  set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* quota or private mode */ } },
+  del(key) { try { localStorage.removeItem(key); } catch {} },
+};
 
-    <div class="settings-group">
-      <div class="checkbox-group">
-        <input type="checkbox" id="soundEnabled" />
-        <label for="soundEnabled">Enable Sound Effects</label>
-      </div>
-    </div>
+/* ============================== SETTINGS ============================== */
+const DEFAULT_SETTINGS = {
+  name: XAPI_DEFAULTS.actorName, email: XAPI_DEFAULTS.actorEmail,
+  endpoint: XAPI_DEFAULTS.endpoint, key: XAPI_DEFAULTS.key, secret: XAPI_DEFAULTS.secret,
+  hints: true, requireQuestion: true, sound: false, timer: 30,
+};
+let settings = Object.assign({}, DEFAULT_SETTINGS, storage.get(STORAGE.settings, {}));
 
-    <div class="button-group">
-      <button class="btn btn-primary" id="saveSettings">Save Settings</button>
-      <button class="btn btn-secondary" id="testXAPI">Test xAPI Connection</button>
-    </div>
+// Docebo (and any Tin Can launcher) passes these on the query string when it opens the package.
+function parseLaunch() {
+  const p = new URLSearchParams(location.search);
+  const out = {};
+  if (p.get("endpoint")) out.endpoint = p.get("endpoint");
+  if (p.get("auth")) out.auth = p.get("auth");
+  if (p.get("activity_id")) out.activityId = p.get("activity_id");
+  if (p.get("registration")) out.registration = p.get("registration");
+  if (p.get("actor")) {
+    try {
+      const a = JSON.parse(p.get("actor"));
+      const first = v => Array.isArray(v) ? v[0] : v;   // Tin Can 0.9 launchers send arrays
+      const actor = { objectType: "Agent" };
+      if (a.name) actor.name = first(a.name);
+      if (a.mbox) actor.mbox = first(a.mbox);
+      if (a.mbox_sha1sum) actor.mbox_sha1sum = first(a.mbox_sha1sum);
+      if (a.openid) actor.openid = first(a.openid);
+      if (a.account) actor.account = first(a.account);
+      out.actor = actor;
+    } catch { /* ignore malformed actor */ }
+  }
+  return out;
+}
+const launch = parseLaunch();
+const launchedByLms = !!(launch.endpoint && launch.auth);
 
-    <div class="button-group">
-      <button class="btn btn-secondary" id="retryXAPI">Retry Failed xAPI</button>
-      <button class="btn btn-secondary" id="exportSession">Export Session JSON</button>
-    </div>
-  </div>
-
-  <!-- TOAST CONTAINER -->
-  <div class="toast-container" id="toastContainer" role="status" aria-live="polite" aria-atomic="true"></div>
-
-  <!-- ANNOUNCER FOR SCREEN READERS -->
-  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" id="announcer"></div>
-
-  <script>
-    // ========================================
-    // CONFIGURATION & CONSTANTS
-    // ========================================
-
-    /*
-     * SETUP INSTRUCTIONS:
-     * 1. Update the XAPI_CONFIG object below with your Docebo LRS credentials
-     * 2. Set your endpoint URL (must end with /xapi/ or /statements)
-     * 3. Provide your LRS key and secret (will be base64 encoded for Basic auth)
-     * 4. Update actor information (name and email)
-     * 5. Open this file in a browser to play
-     * 6. Use Settings panel to update config without editing code
-     */
-
-    const XAPI_CONFIG = {
-      endpoint: "https://your-docebo-lrs.com/xapi/",
-      key: "your-lrs-key",
-      secret: "your-lrs-secret",
-      activityId: "https://example.com/activities/netflix-jeopardy",
-      appName: "Netflix Jeopardy (Single File)",
-      actor: {
-        name: "Player Name",
-        mbox: "mailto:user@example.com"
-      }
+/* ============================= xAPI CLIENT ============================ */
+const xapi = {
+  log: storage.get(STORAGE.log, []),
+  queue: storage.get(STORAGE.queue, []),
+  timer: null,
+  config() {
+    let endpoint = launch.endpoint || settings.endpoint || "";
+    if (endpoint && !endpoint.endsWith("/")) endpoint += "/";
+    const auth = launch.auth || (settings.key && settings.secret ? "Basic " + btoa(`${settings.key}:${settings.secret}`) : "");
+    const actor = launch.actor || { objectType: "Agent", name: settings.name || "Player", mbox: `mailto:${settings.email || "player@example.com"}` };
+    return { endpoint, auth, actor, activityId: launch.activityId || XAPI_DEFAULTS.activityId, registration: launch.registration };
+  },
+  ready() { const c = this.config(); return !!(c.endpoint && c.auth); },
+  statement(verbKey, object, result, extensions, extraContext) {
+    const c = this.config();
+    const verbName = verbKey;
+    const stmt = {
+      id: uuid(),
+      actor: c.actor,
+      verb: { id: VERBS[verbKey], display: { "en-US": verbName } },
+      object: Object.assign({ objectType: "Activity" }, object),
+      context: Object.assign({
+        contextActivities: {
+          grouping: [{ id: c.activityId, objectType: "Activity" }],
+          category: [{ id: "https://w3id.org/xapi/seriousgames", objectType: "Activity" }],
+        },
+        extensions: Object.assign({ [EXT + "app"]: XAPI_DEFAULTS.appName }, extensions || {}),
+      }, extraContext || {}),
+      timestamp: new Date().toISOString(),
     };
-
-    const GAME_CONFIG = {
-      timerDuration: 30,
-      hintsEnabled: false,
-      soundEnabled: false,
-      levenshteinThreshold: 2
-    };
-
-    // ========================================
-    // GAME DATA - NETFLIX CATEGORIES & CLUES
-    // ========================================
-
-    const CATEGORY_POOL = [
-      {
-        name: "Stranger Things",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "This small Indiana town is where the series takes place and where Will Byers goes missing.",
-            correctAnswer: "Hawkins",
-            acceptedAlternates: ["Hawkins Indiana"],
-            sourceNote: "S1E1"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "The parallel dimension filled with monsters and decay is called this, named for its inverted nature.",
-            correctAnswer: "The Upside Down",
-            acceptedAlternates: ["Upside Down"],
-            sourceNote: "S1"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "In Hawkins, this shadowy research facility is ground zero for portals to the Upside Down.",
-            correctAnswer: "Hawkins National Laboratory",
-            acceptedAlternates: ["Hawkins Lab", "HNL"],
-            sourceNote: "S1"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "Eleven's favorite food, she memorably eats an entire box of these frozen breakfast items.",
-            correctAnswer: "Eggo Waffles",
-            acceptedAlternates: ["Eggos", "Waffles"],
-            sourceNote: "S1"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "The main antagonist of Season 1, this predatory creature from the Upside Down hunts by sensing blood.",
-            correctAnswer: "Demogorgon",
-            acceptedAlternates: [],
-            sourceNote: "S1"
-          }
-        ]
-      },
-      {
-        name: "The Witcher",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "Geralt of Rivia is known by this professional title, a monster hunter for hire.",
-            correctAnswer: "Witcher",
-            acceptedAlternates: ["The Witcher"],
-            sourceNote: "Series"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "Geralt's signature hair color, a result of additional mutations during his training.",
-            correctAnswer: "White",
-            acceptedAlternates: ["Silver"],
-            sourceNote: "Series"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "This powerful sorceress mentors Ciri and has a complicated romantic history with Geralt.",
-            correctAnswer: "Yennefer",
-            acceptedAlternates: ["Yennefer of Vengerberg"],
-            sourceNote: "Series"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "Geralt's faithful companion, this bard constantly gets them into trouble while composing songs.",
-            correctAnswer: "Jaskier",
-            acceptedAlternates: ["Dandelion"],
-            sourceNote: "Series"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "The ancient elven language whose name is given to Ciri's mysterious power, meaning 'Elder Speech'.",
-            correctAnswer: "Elder Speech",
-            acceptedAlternates: ["Hen Llinge"],
-            sourceNote: "Series"
-          }
-        ]
-      },
-      {
-        name: "Money Heist",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "The iconic red outfit worn by the robbers during heists was paired with this famous painter's mask.",
-            correctAnswer: "Salvador Dali",
-            acceptedAlternates: ["Dali"],
-            sourceNote: "Series"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "The mastermind behind the heist is known only by this professional title and city name.",
-            correctAnswer: "The Professor",
-            acceptedAlternates: ["Professor"],
-            sourceNote: "Series"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "The crew's first major heist targeted this national institution in Madrid where currency is printed.",
-            correctAnswer: "Royal Mint of Spain",
-            acceptedAlternates: ["Royal Mint", "Fabrica Nacional de Moneda y Timbre"],
-            sourceNote: "Part 1-2"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "Tokyo's lover and the crew's enforcer, this member is named after a European capital in Scandinavia.",
-            correctAnswer: "Rio",
-            acceptedAlternates: [],
-            sourceNote: "Series"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "The emotional Italian song that became the series anthem of resistance, titled 'Bella ___'.",
-            correctAnswer: "Bella Ciao",
-            acceptedAlternates: ["Ciao"],
-            sourceNote: "Series"
-          }
-        ]
-      },
-      {
-        name: "Squid Game",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "The total prize money in the game, this amount in Korean won equals about $38 million USD.",
-            correctAnswer: "45.6 billion won",
-            acceptedAlternates: ["45.6 billion", "456"],
-            sourceNote: "Series"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "The deadly first game where players must cross the finish line while this doll looks away.",
-            correctAnswer: "Red Light Green Light",
-            acceptedAlternates: ["Red Light, Green Light"],
-            sourceNote: "Episode 1"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "Player 456, the main protagonist who ultimately wins the game, goes by this name.",
-            correctAnswer: "Seong Gi-hun",
-            acceptedAlternates: ["Gi-hun", "Seong Gihun"],
-            sourceNote: "Series"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "In the second game, players must extract a shape from this Korean sugar candy without breaking it.",
-            correctAnswer: "Dalgona",
-            acceptedAlternates: ["Ppopgi", "Honeycomb"],
-            sourceNote: "Episode 3"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "The enigmatic Front Man who oversees the games is revealed to be this previous winner from 2015.",
-            correctAnswer: "Hwang In-ho",
-            acceptedAlternates: ["In-ho", "Player 001 from 2015"],
-            sourceNote: "Episode 9"
-          }
-        ]
-      },
-      {
-        name: "Bridgerton",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "The series is set during this historical period of British high society in early 19th century London.",
-            correctAnswer: "Regency Era",
-            acceptedAlternates: ["Regency", "Regency Period"],
-            sourceNote: "Series"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "The mysterious gossip columnist who narrates and exposes society's secrets goes by this pen name.",
-            correctAnswer: "Lady Whistledown",
-            acceptedAlternates: ["Whistledown"],
-            sourceNote: "Series"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "Season 1 focuses on the romance between Daphne Bridgerton and this Duke with a vow against marriage.",
-            correctAnswer: "Duke of Hastings",
-            acceptedAlternates: ["Simon Basset", "Simon", "Duke"],
-            sourceNote: "Season 1"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "Season 2's love story centers on Anthony Bridgerton and this strong-willed Sharma sister.",
-            correctAnswer: "Kate Sharma",
-            acceptedAlternates: ["Kate", "Kathani Sharma"],
-            sourceNote: "Season 2"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "Queen Charlotte's husband, King George III, suffers from this historically debated mental illness.",
-            correctAnswer: "Porphyria",
-            acceptedAlternates: ["Mental illness"],
-            sourceNote: "Series"
-          }
-        ]
-      },
-      {
-        name: "Black Mirror",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "This streaming service released Black Mirror starting with Season 3 after Channel 4.",
-            correctAnswer: "Netflix",
-            acceptedAlternates: [],
-            sourceNote: "Series"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "In 'San Junipero', deceased consciousness can live forever in this simulated beach town.",
-            correctAnswer: "San Junipero",
-            acceptedAlternates: [],
-            sourceNote: "S3E4"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "In 'Nosedive', people rate each other on social media, affecting their socioeconomic status on this scale.",
-            correctAnswer: "Five star rating",
-            acceptedAlternates: ["5 stars", "Star rating", "Five stars"],
-            sourceNote: "S3E1"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "The interactive movie where viewers make choices for the main character, named after a fictional video game.",
-            correctAnswer: "Bandersnatch",
-            acceptedAlternates: [],
-            sourceNote: "2018 Film"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "In 'White Bear', criminals are punished in this type of facility where tourists watch them suffer repeatedly.",
-            correctAnswer: "Justice Park",
-            acceptedAlternates: ["White Bear Justice Park"],
-            sourceNote: "S2E2"
-          }
-        ]
-      },
-      {
-        name: "Netflix Original Films",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "This 2018 post-apocalyptic thriller starring Sandra Bullock required characters to wear these to survive.",
-            correctAnswer: "Blindfolds",
-            acceptedAlternates: ["Blindfold"],
-            sourceNote: "Bird Box"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "Alfonso Cuarón's black-and-white masterpiece about a domestic worker in 1970s Mexico City.",
-            correctAnswer: "Roma",
-            acceptedAlternates: [],
-            sourceNote: "2018"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "Martin Scorsese's epic crime film reuniting Robert De Niro, Al Pacino, and Joe Pesci as aging mobsters.",
-            correctAnswer: "The Irishman",
-            acceptedAlternates: [],
-            sourceNote: "2019"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "Chris Hemsworth leads this action film as a black ops mercenary on a deadly extraction mission in Bangladesh.",
-            correctAnswer: "Extraction",
-            acceptedAlternates: [],
-            sourceNote: "2020"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "This 2022 German remake of the classic war novel won 4 Oscars including Best International Feature Film.",
-            correctAnswer: "All Quiet on the Western Front",
-            acceptedAlternates: ["Im Westen nichts Neues"],
-            sourceNote: "2022"
-          }
-        ]
-      },
-      {
-        name: "International Hits",
-        clues: [
-          {
-            value: 200,
-            difficultyRank: 1,
-            prompt: "This South Korean romantic drama features a North Korean soldier who crash-lands in the South.",
-            correctAnswer: "Crash Landing on You",
-            acceptedAlternates: [],
-            sourceNote: "K-Drama"
-          },
-          {
-            value: 400,
-            difficultyRank: 2,
-            prompt: "Spanish teen drama set in an elite school where three working-class students receive scholarships.",
-            correctAnswer: "Elite",
-            acceptedAlternates: ["Élite"],
-            sourceNote: "Spanish Series"
-          },
-          {
-            value: 600,
-            difficultyRank: 3,
-            prompt: "French mystery series about a master thief inspired by a famous literary gentleman burglar.",
-            correctAnswer: "Lupin",
-            acceptedAlternates: [],
-            sourceNote: "French Series"
-          },
-          {
-            value: 800,
-            difficultyRank: 4,
-            prompt: "German sci-fi thriller involving time travel, spanning three generations in the town of Winden.",
-            correctAnswer: "Dark",
-            acceptedAlternates: [],
-            sourceNote: "German Series"
-          },
-          {
-            value: 1000,
-            difficultyRank: 5,
-            prompt: "This Thai anthology series adapts various stories, with each season focusing on different horrific scenarios.",
-            correctAnswer: "Girl from Nowhere",
-            acceptedAlternates: [],
-            sourceNote: "Thai Series"
-          }
-        ]
-      }
-    ];
-
-    // ========================================
-    // GAME STATE MANAGEMENT
-    // ========================================
-
-    class GameState {
-      constructor() {
-        this.score = 0;
-        this.board = [];
-        this.usedTiles = new Set();
-        this.currentClue = null;
-        this.dailyDoubleIndex = null;
-        this.timerInterval = null;
-        this.timeRemaining = 0;
-        this.sessionId = this.generateUUID();
-        this.sessionStartTime = Date.now();
-        this.answeredClues = [];
-        this.xapiQueue = [];
-        this.gameComplete = false;
-      }
-
-      generateUUID() {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-      }
-
-      save() {
-        const state = {
-          score: this.score,
-          board: this.board,
-          usedTiles: Array.from(this.usedTiles),
-          dailyDoubleIndex: this.dailyDoubleIndex,
-          sessionId: this.sessionId,
-          sessionStartTime: this.sessionStartTime,
-          answeredClues: this.answeredClues,
-          xapiQueue: this.xapiQueue,
-          gameComplete: this.gameComplete
-        };
-        localStorage.setItem('jeopardyGameState', JSON.stringify(state));
-      }
-
-      load() {
-        const saved = localStorage.getItem('jeopardyGameState');
-        if (saved) {
-          const state = JSON.parse(saved);
-          this.score = state.score || 0;
-          this.board = state.board || [];
-          this.usedTiles = new Set(state.usedTiles || []);
-          this.dailyDoubleIndex = state.dailyDoubleIndex;
-          this.sessionId = state.sessionId || this.generateUUID();
-          this.sessionStartTime = state.sessionStartTime || Date.now();
-          this.answeredClues = state.answeredClues || [];
-          this.xapiQueue = state.xapiQueue || [];
-          this.gameComplete = state.gameComplete || false;
-          return true;
-        }
-        return false;
-      }
-
-      clear() {
-        localStorage.removeItem('jeopardyGameState');
-      }
-
-      initializeBoard() {
-        // Select 6 random categories from pool
-        const shuffled = [...CATEGORY_POOL].sort(() => Math.random() - 0.5);
-        const selected = shuffled.slice(0, 6);
-
-        // Build board structure with clues sorted by value
-        this.board = selected.map(category => ({
-          name: category.name,
-          clues: [...category.clues].sort((a, b) => a.value - b.value)
-        }));
-
-        // Place one Daily Double randomly
-        const totalClues = 30; // 6 categories × 5 clues
-        this.dailyDoubleIndex = Math.floor(Math.random() * totalClues);
-      }
-
-      getTileIndex(categoryIndex, clueIndex) {
-        return categoryIndex * 5 + clueIndex;
-      }
-
-      isTileUsed(categoryIndex, clueIndex) {
-        return this.usedTiles.has(this.getTileIndex(categoryIndex, clueIndex));
-      }
-
-      markTileUsed(categoryIndex, clueIndex) {
-        this.usedTiles.add(this.getTileIndex(categoryIndex, clueIndex));
-      }
-
-      isDailyDouble(categoryIndex, clueIndex) {
-        return this.getTileIndex(categoryIndex, clueIndex) === this.dailyDoubleIndex;
-      }
-
-      allTilesUsed() {
-        return this.usedTiles.size === 30;
-      }
-    }
-
-    // ========================================
-    // xAPI CLIENT
-    // ========================================
-
-    class XAPIClient {
-      constructor(config) {
-        this.config = config;
-      }
-
-      getAuthHeader() {
-        const credentials = `${this.config.key}:${this.config.secret}`;
-        return `Basic ${btoa(credentials)}`;
-      }
-
-      async sendStatement(statement) {
-        const endpoint = this.config.endpoint.endsWith('/')
-          ? `${this.config.endpoint}statements`
-          : `${this.config.endpoint}/statements`;
-
-        try {
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': this.getAuthHeader(),
-              'X-Experience-API-Version': '1.0.3'
-            },
-            body: JSON.stringify(statement)
-          });
-
-          if (!response.ok) {
-            throw new Error(`xAPI request failed: ${response.status} ${response.statusText}`);
-          }
-
-          return { success: true, response };
-        } catch (error) {
-          console.error('xAPI Error:', error);
-          
-          // Queue failed statement for retry
-          gameState.xapiQueue.push({
-            statement,
-            timestamp: new Date().toISOString(),
-            error: error.message
-          });
-          gameState.save();
-
-          showToast('xAPI request failed. Will retry later.', 'incorrect');
-          return { success: false, error };
-        }
-      }
-
-      createBaseStatement(verb, object) {
-        return {
-          actor: {
-            name: this.config.actor.name,
-            mbox: this.config.actor.mbox
-          },
-          verb: verb,
-          object: object,
-          timestamp: new Date().toISOString()
-        };
-      }
-
-      async sendInitialized() {
-        const statement = this.createBaseStatement(
-          {
-            id: "http://adlnet.gov/expapi/verbs/initialized",
-            display: { "en-US": "initialized" }
-          },
-          {
-            id: this.config.activityId,
-            definition: {
-              name: { "en-US": "Netflix Jeopardy Round 1" },
-              description: { "en-US": "Single player Jeopardy-style trivia game featuring Netflix shows and movies" }
-            }
-          }
-        );
-
-        statement.context = {
-          contextActivities: {
-            category: [{ id: "https://w3id.org/xapi/video" }]
-          },
-          extensions: {
-            "app": this.config.appName,
-            "sessionId": gameState.sessionId
-          }
-        };
-
-        return this.sendStatement(statement);
-      }
-
-      async sendAnswered(clue, categoryIndex, clueIndex, userAnswer, isCorrect, responseTimeMs, wager = null, hintUsed = false) {
-        const clueId = `${this.config.activityId}/clue/${clue.value}/${categoryIndex}-${clueIndex}`;
-        const isDailyDouble = gameState.isDailyDouble(categoryIndex, clueIndex);
-
-        const statement = this.createBaseStatement(
-          {
-            id: "http://adlnet.gov/expapi/verbs/answered",
-            display: { "en-US": "answered" }
-          },
-          {
-            id: clueId,
-            definition: {
-              name: { "en-US": clue.prompt },
-              type: "http://adlnet.gov/expapi/activities/question"
-            }
-          }
-        );
-
-        let scoreValue = wager !== null ? wager : clue.value;
-        if (hintUsed) {
-          scoreValue = Math.floor(scoreValue / 2);
-        }
-        
-        statement.result = {
-          response: userAnswer,
-          success: isCorrect,
-          duration: `PT${Math.floor(responseTimeMs / 1000)}S`,
-          score: {
-            raw: isCorrect ? scoreValue : -scoreValue,
-            min: -scoreValue,
-            max: scoreValue
-          }
-        };
-
-        statement.context = {
-          extensions: {
-            "category": gameState.board[categoryIndex].name,
-            "value": clue.value,
-            "dailyDouble": isDailyDouble,
-            "wager": wager,
-            "difficulty": clue.difficultyRank,
-            "hintUsed": hintUsed,
-            "sessionId": gameState.sessionId
-          }
-        };
-
-        return this.sendStatement(statement);
-      }
-
-      async sendCompleted(totalScore, accuracy, avgResponseMs, totalDuration) {
-        const statement = this.createBaseStatement(
-          {
-            id: "http://adlnet.gov/expapi/verbs/completed",
-            display: { "en-US": "completed" }
-          },
-          {
-            id: this.config.activityId,
-            definition: {
-              name: { "en-US": "Netflix Jeopardy Round 1" }
-            }
-          }
-        );
-
-        statement.result = {
-          score: { raw: totalScore },
-          completion: true,
-          success: totalScore > 0,
-          duration: `PT${Math.floor(totalDuration / 1000)}S`
-        };
-
-        statement.context = {
-          extensions: {
-            "accuracy": accuracy,
-            "avgResponseMs": avgResponseMs,
-            "sessionId": gameState.sessionId
-          }
-        };
-
-        return this.sendStatement(statement);
-      }
-
-      async retryQueue() {
-        if (gameState.xapiQueue.length === 0) {
-          showToast('No failed xAPI statements to retry.', 'correct');
-          return;
-        }
-
-        const queue = [...gameState.xapiQueue];
-        gameState.xapiQueue = [];
-        gameState.save();
-
-        let successCount = 0;
-        for (const item of queue) {
-          const result = await this.sendStatement(item.statement);
-          if (result.success) {
-            successCount++;
+    if (c.registration) stmt.context.registration = c.registration;
+    if (result) stmt.result = result;
+    return stmt;
+  },
+  enqueue(stmt) {
+    this.queue.push({ statement: stmt, attempts: 0, nextAt: 0 });
+    storage.set(STORAGE.queue, this.queue);
+    UI.updateQueueCount();
+    return this.flush();
+  },
+  async post(stmt) {
+    const c = this.config();
+    const res = await fetch(c.endpoint + "statements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Experience-API-Version": "1.0.3", "Authorization": c.auth },
+      body: JSON.stringify(stmt),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res;
+  },
+  record(entry) {
+    this.log.push(Object.assign({ at: new Date().toISOString() }, entry));
+    if (this.log.length > 200) this.log = this.log.slice(-200);
+    storage.set(STORAGE.log, this.log);
+  },
+  async flush(force = false) {
+    if (this.flushing) { this.pending = true; return; }   // a flush is running: it will loop again for us
+    this.flushing = true;
+    try {
+      if (!this.ready()) { UI.setXapiStatus("No LRS configured: statements are queued locally (" + this.queue.length + ")."); return; }
+      let failed = false;
+      do {
+        this.pending = false;
+        const now = Date.now();
+        for (const item of this.queue.slice()) {           // statements go out in the order they were created
+          if (!force && item.nextAt > now) continue;
+          try {
+            await this.post(item.statement);
+            this.queue = this.queue.filter(q => q !== item);
+            this.record({ ok: true, id: item.statement.id, verb: item.statement.verb.display["en-US"] });
+          } catch (err) {
+            failed = true;
+            item.attempts += 1;
+            item.nextAt = Date.now() + Math.min(5 * 60 * 1000, 2000 * 2 ** item.attempts);   // exponential backoff, max 5 min
+            item.lastError = String(err.message || err);
+            this.record({ ok: false, id: item.statement.id, verb: item.statement.verb.display["en-US"], error: item.lastError });
           }
         }
-
-        if (successCount === queue.length) {
-          showToast(`Successfully sent ${successCount} queued statements.`, 'correct');
-        } else {
-          showToast(`Sent ${successCount}/${queue.length} statements. ${queue.length - successCount} failed.`, 'incorrect');
-        }
+      } while (this.pending);
+      storage.set(STORAGE.queue, this.queue);
+      UI.updateQueueCount();
+      if (failed) {
+        UI.toast("xAPI delivery failed; will retry.", "bad");
+        UI.setXapiStatus(`Last error: ${this.queue[0]?.lastError || "network"}. ${this.queue.length} queued.`);
+        this.scheduleRetry();
+      } else if (this.queue.length === 0) {
+        UI.setXapiStatus("All statements delivered.");
       }
+    } finally { this.flushing = false; }
+  },
+  scheduleRetry() {
+    clearTimeout(this.timer);
+    const next = Math.min(...this.queue.map(q => q.nextAt));
+    if (isFinite(next)) this.timer = setTimeout(() => this.flush(), Math.max(1000, next - Date.now()));
+  },
+  /* ---- statement helpers ---- */
+  sendInitialized() {
+    const c = this.config();
+    return this.enqueue(this.statement("initialized",
+      { id: c.activityId, definition: { name: { "en-US": "Netflix Jeopardy Round 1" }, type: "http://adlnet.gov/expapi/activities/assessment" } },
+      null, { [EXT + "timerSeconds"]: settings.timer, [EXT + "hintsEnabled"]: !!settings.hints }));
+  },
+  sendAnswered(a) {   // a = answer record from state.answers
+    const c = this.config();
+    return this.enqueue(this.statement("answered",
+      { id: `${c.activityId}/clue/${a.slug}/${a.value}`,
+        definition: { name: { "en-US": `${a.category} for $${a.value}` }, description: { "en-US": a.prompt },
+          type: "http://adlnet.gov/expapi/activities/question", interactionType: "fill-in",
+          correctResponsesPattern: [a.correctAnswer] } },
+      { response: a.response, success: a.correct, duration: isoDuration(a.ms),
+        score: { raw: a.delta, min: a.hintUsed ? 0 : -a.potential, max: a.hintUsed ? Math.floor(a.potential / 2) : a.potential } },
+      { [EXT + "category"]: a.category, [EXT + "value"]: a.value, [EXT + "dailyDouble"]: a.dailyDouble,
+        [EXT + "wager"]: a.dailyDouble ? a.wager : null, [EXT + "difficulty"]: a.difficulty,
+        [EXT + "hintUsed"]: a.hintUsed, [EXT + "timedOut"]: a.timedOut, [EXT + "forfeited"]: a.forfeited,
+        [EXT + "runningTotal"]: a.runningTotal }));
+  },
+  sendScored(delta, total, cluesDone) {
+    const c = this.config();
+    return this.enqueue(this.statement("scored", { id: c.activityId },
+      { score: { raw: total } },
+      { [EXT + "scoreChange"]: delta, [EXT + "runningTotal"]: total, [EXT + "cluesAnswered"]: cluesDone, [EXT + "cluesTotal"]: 30 }));
+  },
+  sendCompleted(stats) {
+    const c = this.config();
+    return this.enqueue(this.statement("completed", { id: c.activityId, definition: { name: { "en-US": "Netflix Jeopardy Round 1" } } },
+      { score: { raw: stats.score }, completion: true, success: stats.score > 0, duration: isoDuration(stats.durationMs) },
+      { [EXT + "accuracy"]: stats.accuracy, [EXT + "avgResponseMs"]: stats.avgResponseMs, [EXT + "correct"]: stats.correct, [EXT + "hintsUsed"]: stats.hintsUsed }));
+  },
+  sendTest() {
+    const c = this.config();
+    return this.enqueue(this.statement("experienced", { id: c.activityId + "/self-test", definition: { name: { "en-US": "xAPI connection self-test" } } }, null, { [EXT + "selfTest"]: true }));
+  },
+};
 
-      async testConnection() {
-        const testStatement = this.createBaseStatement(
-          {
-            id: "http://adlnet.gov/expapi/verbs/experienced",
-            display: { "en-US": "experienced" }
-          },
-          {
-            id: `${this.config.activityId}/test`,
-            definition: {
-              name: { "en-US": "xAPI Connection Test" }
-            }
-          }
-        );
+/* ============================== GAME STATE ============================ */
+let state = null;
 
-        const result = await this.sendStatement(testStatement);
-        if (result.success) {
-          showToast('xAPI connection test successful!', 'correct');
-        } else {
-          showToast('xAPI connection test failed. Check your credentials.', 'incorrect');
-        }
-      }
-    }
+function newState() {
+  const cats = shuffle(CATEGORY_POOL).slice(0, 6).map(c => ({
+    name: c.name, slug: slug(c.name),
+    clues: c.clues.slice().sort((a, b) => a.value - b.value),   // always $200 -> $1000 top to bottom
+  }));
+  return {
+    version: 2,
+    categories: cats,
+    used: {},
+    score: 0,
+    dailyDouble: { c: Math.floor(Math.random() * 6), r: Math.floor(Math.random() * 5) },
+    answers: [],
+    startedAt: new Date().toISOString(),
+    open: null,
+    completed: false,
+  };
+}
+const save = () => storage.set(STORAGE.state, state);
+const key = (c, r) => `${c}-${r}`;
+const cluesDone = () => Object.keys(state.used).length;
+const isDailyDouble = (c, r) => state.dailyDouble.c === c && state.dailyDouble.r === r;
 
-    // ========================================
-    // UTILITY FUNCTIONS
-    // ========================================
+/* ================================ AUDIO =============================== */
+const audio = {
+  ctx: null,
+  beep(freq = 660, dur = 0.12, type = "sine", vol = 0.15) {
+    if (!settings.sound) return;
+    try {
+      this.ctx = this.ctx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, this.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+      o.connect(g); g.connect(this.ctx.destination); o.start(); o.stop(this.ctx.currentTime + dur);
+    } catch {}
+  },
+  select() { this.beep(520, 0.08, "square", 0.06); },
+  correct() { this.beep(660, 0.1); setTimeout(() => this.beep(880, 0.18), 110); },
+  wrong() { this.beep(220, 0.25, "sawtooth", 0.1); },
+  dd() { [440, 554, 659, 880].forEach((f, i) => setTimeout(() => this.beep(f, 0.18, "triangle", 0.12), i * 120)); },
+  tick() { this.beep(1000, 0.04, "square", 0.04); },
+};
 
-    function normalizeAnswer(text) {
-      if (!text) return '';
-      
-      // Convert to lowercase and trim
-      let normalized = text.toLowerCase().trim();
-      
-      // Remove Jeopardy-style question formats
-      normalized = normalized.replace(/^(who|what|where|when|why|how|which)\s+(is|are|was|were)\s+/i, '');
-      normalized = normalized.replace(/^(who|what|where|when|why|how|which)\s+/i, '');
-      
-      // Remove punctuation and special characters
-      normalized = normalized.replace(/[^\w\s]/g, '');
-      
-      // Remove leading articles
-      normalized = normalized.replace(/^(a|an|the)\s+/i, '');
-      
-      // Remove extra whitespace
-      normalized = normalized.replace(/\s+/g, ' ').trim();
-      
-      return normalized;
-    }
+/* ================================= UI ================================= */
+const UI = {
+  boardEl: $("#board"), dialogEl: $("#dialog"), panelEl: $("#dlgPanel"),
+  timerHandle: null, lastFocusedTile: null,
 
-    function levenshteinDistance(str1, str2) {
-      const m = str1.length;
-      const n = str2.length;
-      const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-
-      for (let i = 0; i <= m; i++) dp[i][0] = i;
-      for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-      for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-          if (str1[i - 1] === str2[j - 1]) {
-            dp[i][j] = dp[i - 1][j - 1];
-          } else {
-            dp[i][j] = Math.min(
-              dp[i - 1][j] + 1,    // deletion
-              dp[i][j - 1] + 1,    // insertion
-              dp[i - 1][j - 1] + 1 // substitution
-            );
-          }
-        }
-      }
-
-      return dp[m][n];
-    }
-
-    function isAnswerCorrect(userAnswer, correctAnswer, alternates = []) {
-      const normalizedUser = normalizeAnswer(userAnswer);
-      const normalizedCorrect = normalizeAnswer(correctAnswer);
-
-      // Check exact match
-      if (normalizedUser === normalizedCorrect) return true;
-
-      // Check alternates
-      for (const alt of alternates) {
-        if (normalizedUser === normalizeAnswer(alt)) return true;
-      }
-
-      // Check Levenshtein distance
-      const maxDistance = normalizedCorrect.length <= 4 ? 1 : 2;
-      if (levenshteinDistance(normalizedUser, normalizedCorrect) <= maxDistance) {
-        return true;
-      }
-
-      // Check alternates with Levenshtein
-      for (const alt of alternates) {
-        const normalizedAlt = normalizeAnswer(alt);
-        const altMaxDistance = normalizedAlt.length <= 4 ? 1 : 2;
-        if (levenshteinDistance(normalizedUser, normalizedAlt) <= altMaxDistance) {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    function formatTime(seconds) {
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
-
-    function formatCurrency(amount) {
-      return `$${Math.abs(amount).toLocaleString()}`;
-    }
-
-    // ========================================
-    // SOUND EFFECTS (Web Audio API)
-    // ========================================
-
-    class SoundEffects {
-      constructor() {
-        this.audioContext = null;
-        this.enabled = false;
-      }
-
-      init() {
-        if (!this.audioContext) {
-          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-      }
-
-      playBeep(frequency = 440, duration = 0.1) {
-        if (!this.enabled || !this.audioContext) return;
-
-        const oscillator = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-
-        oscillator.frequency.value = frequency;
-        oscillator.type = 'sine';
-
-        gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
-
-        oscillator.start(this.audioContext.currentTime);
-        oscillator.stop(this.audioContext.currentTime + duration);
-      }
-
-      playCorrect() {
-        this.playBeep(523.25, 0.1); // C5
-        setTimeout(() => this.playBeep(659.25, 0.15), 100); // E5
-      }
-
-      playIncorrect() {
-        this.playBeep(220, 0.3); // A3
-      }
-
-      playDailyDouble() {
-        const notes = [440, 554.37, 659.25, 880]; // A4, C#5, E5, A5
-        notes.forEach((freq, i) => {
-          setTimeout(() => this.playBeep(freq, 0.1), i * 100);
-        });
-      }
-
-      playSelect() {
-        this.playBeep(660, 0.05);
-      }
-    }
-
-    // ========================================
-    // UI RENDERING
-    // ========================================
-
-    function renderBoard() {
-      const boardEl = document.getElementById('gameBoard');
-      boardEl.innerHTML = '';
-
-      if (gameState.board.length === 0) {
-        gameState.initializeBoard();
-      }
-
-      // Render category headers
-      gameState.board.forEach((category, catIndex) => {
-        const header = document.createElement('div');
-        header.className = 'category-header';
-        header.textContent = category.name;
-        header.setAttribute('role', 'columnheader');
-        boardEl.appendChild(header);
+  renderBoard() {
+    const board = this.boardEl;
+    board.innerHTML = "";
+    state.categories.forEach((cat, c) => {
+      const col = document.createElement("div");
+      col.className = "category";
+      col.setAttribute("role", "group");
+      col.setAttribute("aria-labelledby", `cat-${c}`);
+      const head = document.createElement("div");
+      head.className = "cat-head"; head.id = `cat-${c}`;
+      head.textContent = cat.name;                       // sentence case, as written in the data
+      col.appendChild(head);
+      cat.clues.forEach((clue, r) => {
+        const used = !!state.used[key(c, r)];
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "tile" + (used ? " used" : "");
+        btn.dataset.c = c; btn.dataset.r = r;
+        btn.textContent = "$" + clue.value;
+        btn.setAttribute("aria-label", `${cat.name} for $${clue.value}${used ? ", already played" : ""}`);
+        if (used) { btn.disabled = true; btn.setAttribute("aria-disabled", "true"); }
+        btn.tabIndex = -1;
+        btn.addEventListener("click", () => Game.openTile(c, r));
+        col.appendChild(btn);
       });
-
-      // Render clue tiles in proper value order (by row, not by category)
-      // Values: $200, $400, $600, $800, $1000
-      const values = [200, 400, 600, 800, 1000];
-      
-      for (let clueIndex = 0; clueIndex < 5; clueIndex++) {
-        gameState.board.forEach((category, catIndex) => {
-          const clue = category.clues[clueIndex];
-          const tile = document.createElement('button');
-          tile.className = 'tile';
-          tile.textContent = formatCurrency(clue.value);
-          tile.setAttribute('role', 'gridcell');
-          tile.setAttribute('data-category', catIndex);
-          tile.setAttribute('data-clue', clueIndex);
-          tile.setAttribute('aria-label', `${category.name}, ${formatCurrency(clue.value)}`);
-          tile.setAttribute('tabindex', catIndex === 0 && clueIndex === 0 ? '0' : '-1');
-
-          if (gameState.isTileUsed(catIndex, clueIndex)) {
-            tile.classList.add('used');
-            tile.setAttribute('aria-disabled', 'true');
-            tile.disabled = true;
-          } else {
-            tile.addEventListener('click', () => handleTileClick(catIndex, clueIndex));
-          }
-
-          boardEl.appendChild(tile);
-        });
-      }
-
-      updateScore();
+      board.appendChild(col);
+    });
+    this.setRovingFocus();
+    this.renderScore();
+    this.renderProgress();
+  },
+  setRovingFocus(prefer) {
+    const tiles = [...this.boardEl.querySelectorAll(".tile:not(:disabled)")];
+    tiles.forEach(t => t.tabIndex = -1);
+    const target = (prefer && !prefer.disabled ? prefer : null) || tiles[0];
+    if (target) target.tabIndex = 0;
+  },
+  renderScore(delta) {
+    const el = $("#score");
+    el.textContent = money(state.score);
+    el.classList.toggle("neg", state.score < 0);
+    if (delta !== undefined) {
+      el.classList.add("bump"); setTimeout(() => el.classList.remove("bump"), 250);
+      $("#announcer").textContent = `${delta >= 0 ? "Gained" : "Lost"} ${money(Math.abs(delta))}. Score ${money(state.score)}.`;
     }
+  },
+  renderProgress() { $("#progress").textContent = `${30 - cluesDone()} clues left`; },
 
-    function updateScore() {
-      document.getElementById('score').textContent = gameState.score.toLocaleString();
+  toast(msg, kind = "") {
+    const t = document.createElement("div");
+    t.className = "toast " + kind; t.textContent = msg;
+    $("#toasts").appendChild(t);
+    setTimeout(() => t.remove(), 2600);
+  },
+  announce(msg) { $("#announcer").textContent = msg; },
+  confetti() {
+    if (reducedMotion()) return;
+    const wrap = document.createElement("div"); wrap.className = "confetti"; wrap.setAttribute("aria-hidden", "true");
+    const colors = ["#e50914", "#ffffff", "#f5c518", "#46d369"];
+    for (let i = 0; i < 48; i++) {
+      const s = document.createElement("span");
+      s.style.left = Math.random() * 100 + "vw";
+      s.style.background = colors[i % colors.length];
+      s.style.animationDelay = (Math.random() * 0.4) + "s";
+      s.style.animationDuration = (1.2 + Math.random() * 0.8) + "s";
+      wrap.appendChild(s);
     }
-
-    function showToast(message, type = '') {
-      const container = document.getElementById('toastContainer');
-      const toast = document.createElement('div');
-      toast.className = `toast ${type}`;
-      toast.textContent = message;
-      container.appendChild(toast);
-
-      setTimeout(() => {
-        toast.style.animation = 'toastSlideIn 0.3s ease reverse';
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-
-    function announce(message) {
-      const announcer = document.getElementById('announcer');
-      announcer.textContent = message;
-      setTimeout(() => announcer.textContent = '', 1000);
-    }
-
-    // ========================================
-    // MODAL DIALOGS
-    // ========================================
-
-    function showModal(content) {
-      const overlay = document.getElementById('modalOverlay');
-      const modal = document.getElementById('modalContent');
-      modal.innerHTML = content;
-      overlay.classList.add('active');
-
-      // Focus trap
-      const focusableElements = modal.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (focusableElements.length > 0) {
-        focusableElements[0].focus();
-      }
-
-      // Trap focus within modal
-      modal.addEventListener('keydown', (e) => {
-        if (e.key === 'Tab') {
-          const firstFocusable = focusableElements[0];
-          const lastFocusable = focusableElements[focusableElements.length - 1];
-
-          if (e.shiftKey && document.activeElement === firstFocusable) {
-            e.preventDefault();
-            lastFocusable.focus();
-          } else if (!e.shiftKey && document.activeElement === lastFocusable) {
-            e.preventDefault();
-            firstFocusable.focus();
-          }
-        }
-      });
-    }
-
-    function hideModal() {
-      const overlay = document.getElementById('modalOverlay');
-      overlay.classList.remove('active');
-      
-      // Return focus to board
-      const firstTile = document.querySelector('.tile:not(.used)');
-      if (firstTile) firstTile.focus();
-    }
-
-    function showClueDialog(categoryIndex, clueIndex, wager = null) {
-      const category = gameState.board[categoryIndex];
-      const clue = category.clues[clueIndex];
-      const isDailyDouble = gameState.isDailyDouble(categoryIndex, clueIndex);
-      const timerDuration = GAME_CONFIG.timerDuration;
-
-      gameState.currentClue = {
-        categoryIndex,
-        clueIndex,
-        startTime: Date.now(),
-        wager
-      };
-
-      const content = `
-        <div class="modal-header">
-          <span class="modal-category">${category.name}</span>
-          <span class="modal-value">${wager !== null ? `Wager: ${formatCurrency(wager)}` : formatCurrency(clue.value)}</span>
-          <div class="modal-timer">
-            <svg class="timer-circle" width="50" height="50">
-              <circle class="timer-circle-bg" cx="25" cy="25" r="20"></circle>
-              <circle class="timer-circle-progress" id="timerProgress" cx="25" cy="25" r="20" 
-                      stroke-dasharray="125.6" stroke-dashoffset="0"></circle>
-            </svg>
-            <span id="timerDisplay">${timerDuration}</span>
-          </div>
-        </div>
-        
-        <div class="clue-text">${clue.prompt}</div>
-        
-        <div class="answer-section">
-          <label for="answerInput">Your Answer:</label>
-          <input type="text" id="answerInput" class="answer-input" 
-                 placeholder="What is...? / Who is...? / Where is...?" autocomplete="off" />
-          <div class="answer-format-note">
-            Format your answer as a question (e.g., "Who is...", "What is...", "Where is...")
-          </div>
-        </div>
-        
-        <div class="button-group">
-          <button class="btn btn-primary" id="submitAnswer">Submit Answer</button>
-          ${GAME_CONFIG.hintsEnabled ? `
-            <div class="hint-wrapper">
-              <button class="btn btn-secondary hint-btn" id="hintBtn" type="button">
-                💡 Hint
-              </button>
-              <div class="hint-tooltip" id="hintTooltip">
-                First letter: <strong>${clue.correctAnswer.charAt(0).toUpperCase()}</strong>
-                <br>Score will be halved!
-              </div>
-            </div>
-          ` : ''}
-          <button class="btn btn-secondary" id="forfeit">Forfeit</button>
-        </div>
-      `;
-
-      showModal(content);
-
-      // Start timer
-      startTimer(timerDuration, categoryIndex, clueIndex);
-
-      // Event listeners
-      const input = document.getElementById('answerInput');
-      const submitBtn = document.getElementById('submitAnswer');
-      
-      input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          submitAnswer(categoryIndex, clueIndex, wager);
-        }
-      });
-
-      submitBtn.addEventListener('click', () => {
-        submitAnswer(categoryIndex, clueIndex, wager);
-      });
-
-      document.getElementById('forfeit')?.addEventListener('click', () => {
-        forfeitClue(categoryIndex, clueIndex, wager);
-      });
-
-      if (GAME_CONFIG.hintsEnabled) {
-        const hintBtn = document.getElementById('hintBtn');
-        hintBtn?.addEventListener('click', () => {
-          useHint(clue, categoryIndex, clueIndex, wager);
-        });
-      }
-    }
-
-    function showWagerDialog(categoryIndex, clueIndex) {
-      const currentScore = gameState.score;
-      const clue = gameState.board[categoryIndex].clues[clueIndex];
-      const minWager = 5;
-      const maxWager = Math.max(clue.value, currentScore > 0 ? currentScore : clue.value);
-
-      soundEffects.playDailyDouble();
-      showToast('🎯 DAILY DOUBLE! 🎯', 'daily-double');
-
-      const content = `
-        <div class="wager-section">
-          <h3>⭐ DAILY DOUBLE! ⭐</h3>
-          <p>Make your wager!</p>
-          
-          <div class="wager-input-group">
-            <label for="wagerInput">Enter Your Wager:</label>
-            <input type="number" id="wagerInput" class="answer-input" 
-                   min="${minWager}" max="${maxWager}" value="${minWager}" 
-                   step="100" />
-            <div class="wager-limits">
-              Minimum: ${formatCurrency(minWager)} | Maximum: ${formatCurrency(maxWager)}
-            </div>
-          </div>
-          
-          <div class="button-group">
-            <button class="btn btn-primary" id="submitWager">Place Wager</button>
-          </div>
-        </div>
-      `;
-
-      showModal(content);
-
-      const wagerInput = document.getElementById('wagerInput');
-      wagerInput.focus();
-
-      wagerInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          placeWager(categoryIndex, clueIndex, minWager, maxWager);
-        }
-      });
-
-      document.getElementById('submitWager').addEventListener('click', () => {
-        placeWager(categoryIndex, clueIndex, minWager, maxWager);
-      });
-    }
-
-    function placeWager(categoryIndex, clueIndex, minWager, maxWager) {
-      const wagerInput = document.getElementById('wagerInput');
-      let wager = parseInt(wagerInput.value);
-
-      if (isNaN(wager) || wager < minWager || wager > maxWager) {
-        showToast(`Wager must be between ${formatCurrency(minWager)} and ${formatCurrency(maxWager)}`, 'incorrect');
-        return;
-      }
-
-      showClueDialog(categoryIndex, clueIndex, wager);
-    }
-
-    function startTimer(duration, categoryIndex, clueIndex) {
-      gameState.timeRemaining = duration;
-      const timerDisplay = document.getElementById('timerDisplay');
-      const timerProgress = document.getElementById('timerProgress');
-      const circumference = 125.6;
-
-      gameState.timerInterval = setInterval(() => {
-        gameState.timeRemaining--;
-        
-        if (timerDisplay) {
-          timerDisplay.textContent = gameState.timeRemaining;
-          announce(`${gameState.timeRemaining} seconds remaining`);
-        }
-
-        if (timerProgress) {
-          const offset = circumference - (gameState.timeRemaining / duration) * circumference;
-          timerProgress.style.strokeDashoffset = offset;
-        }
-
-        if (gameState.timeRemaining <= 0) {
-          clearInterval(gameState.timerInterval);
-          timeoutClue(categoryIndex, clueIndex, gameState.currentClue?.wager);
-        }
-      }, 1000);
-    }
-
-    function submitAnswer(categoryIndex, clueIndex, wager = null) {
-      clearInterval(gameState.timerInterval);
-
-      const input = document.getElementById('answerInput');
-      const userAnswer = input.value.trim();
-
-      if (!userAnswer) {
-        showToast('Please enter an answer.', 'incorrect');
-        gameState.timeRemaining = GAME_CONFIG.timerDuration;
-        startTimer(gameState.timeRemaining, categoryIndex, clueIndex);
-        return;
-      }
-
-      const clue = gameState.board[categoryIndex].clues[clueIndex];
-      const isCorrect = isAnswerCorrect(userAnswer, clue.correctAnswer, clue.acceptedAlternates);
-      const responseTime = Date.now() - gameState.currentClue.startTime;
-      
-      // Use halved score if hint was used
-      let scoreValue = wager !== null ? wager : clue.value;
-      const hintUsed = gameState.currentClue.hintUsed || false;
-      if (hintUsed) {
-        scoreValue = Math.floor(scoreValue / 2);
-      }
-
-      // Update score
-      if (isCorrect) {
-        gameState.score += scoreValue;
-        showToast(`✓ Correct! +${formatCurrency(scoreValue)}${hintUsed ? ' (hint used)' : ''}`, 'correct');
-        soundEffects.playCorrect();
-      } else {
-        gameState.score -= scoreValue;
-        showToast(`✗ Incorrect. The answer was: ${clue.correctAnswer}. -${formatCurrency(scoreValue)}`, 'incorrect');
-        soundEffects.playIncorrect();
-      }
-
-      // Mark tile as used
-      gameState.markTileUsed(categoryIndex, clueIndex);
-
-      // Record answer
-      gameState.answeredClues.push({
-        categoryIndex,
-        clueIndex,
-        userAnswer,
-        isCorrect,
-        responseTime,
-        wager,
-        hintUsed,
-        timestamp: new Date().toISOString()
-      });
-
-      // Send xAPI statement
-      xapiClient.sendAnswered(clue, categoryIndex, clueIndex, userAnswer, isCorrect, responseTime, wager, hintUsed);
-
-      // Save state
-      gameState.save();
-      updateScore();
-
-      // Close modal and update board
-      hideModal();
-      renderBoard();
-
-      // Check if game is complete
-      if (gameState.allTilesUsed()) {
-        setTimeout(() => showResults(), 1000);
-      }
-    }
-
-    function forfeitClue(categoryIndex, clueIndex, wager = null) {
-      if (!confirm('Are you sure you want to forfeit this clue?')) {
-        return;
-      }
-
-      clearInterval(gameState.timerInterval);
-
-      const clue = gameState.board[categoryIndex].clues[clueIndex];
-      const scoreValue = wager !== null ? wager : clue.value;
-      const responseTime = Date.now() - gameState.currentClue.startTime;
-
-      gameState.score -= scoreValue;
-      showToast(`Forfeited. The answer was: ${clue.correctAnswer}. -${formatCurrency(scoreValue)}`, 'incorrect');
-
-      gameState.markTileUsed(categoryIndex, clueIndex);
-      gameState.answeredClues.push({
-        categoryIndex,
-        clueIndex,
-        userAnswer: '',
-        isCorrect: false,
-        responseTime,
-        wager,
-        forfeited: true,
-        timestamp: new Date().toISOString()
-      });
-
-      xapiClient.sendAnswered(clue, categoryIndex, clueIndex, '', false, responseTime, wager);
-      gameState.save();
-      updateScore();
-
-      hideModal();
-      renderBoard();
-
-      if (gameState.allTilesUsed()) {
-        setTimeout(() => showResults(), 1000);
-      }
-    }
-
-    function timeoutClue(categoryIndex, clueIndex, wager = null) {
-      const clue = gameState.board[categoryIndex].clues[clueIndex];
-      const scoreValue = wager !== null ? wager : clue.value;
-      const responseTime = GAME_CONFIG.timerDuration * 1000;
-
-      gameState.score -= scoreValue;
-      showToast(`⏰ Time's up! The answer was: ${clue.correctAnswer}. -${formatCurrency(scoreValue)}`, 'incorrect');
-
-      gameState.markTileUsed(categoryIndex, clueIndex);
-      gameState.answeredClues.push({
-        categoryIndex,
-        clueIndex,
-        userAnswer: '',
-        isCorrect: false,
-        responseTime,
-        wager,
-        timedOut: true,
-        timestamp: new Date().toISOString()
-      });
-
-      xapiClient.sendAnswered(clue, categoryIndex, clueIndex, '', false, responseTime, wager);
-      gameState.save();
-      updateScore();
-
-      hideModal();
-      renderBoard();
-
-      if (gameState.allTilesUsed()) {
-        setTimeout(() => showResults(), 1000);
-      }
-    }
-
-    function useHint(clue, categoryIndex, clueIndex, wager) {
-      // Mark hint as used for this clue
-      if (!gameState.currentClue.hintUsed) {
-        gameState.currentClue.hintUsed = true;
-        gameState.currentClue.originalScore = wager !== null ? wager : clue.value;
-        gameState.currentClue.halvedScore = Math.floor(gameState.currentClue.originalScore / 2);
-        
-        showToast(`💡 Hint used! Score is now halved to ${formatCurrency(gameState.currentClue.halvedScore)}`, 'daily-double');
-        
-        // Update the hint button to show it's been used
-        const hintBtn = document.getElementById('hintBtn');
-        if (hintBtn) {
-          hintBtn.classList.add('hint-used');
-          hintBtn.disabled = true;
-          hintBtn.textContent = '✓ Hint Used';
-        }
-      }
-    }
-
-    function showResults() {
-      gameState.gameComplete = true;
-
-      const totalQuestions = gameState.answeredClues.length;
-      const correctAnswers = gameState.answeredClues.filter(a => a.isCorrect).length;
-      const accuracy = totalQuestions > 0 ? (correctAnswers / totalQuestions * 100).toFixed(1) : 0;
-      const avgResponseTime = totalQuestions > 0 
-        ? Math.round(gameState.answeredClues.reduce((sum, a) => sum + a.responseTime, 0) / totalQuestions)
-        : 0;
-      const totalDuration = Date.now() - gameState.sessionStartTime;
-
-      // Send completion xAPI
-      xapiClient.sendCompleted(gameState.score, accuracy / 100, avgResponseTime, totalDuration);
-
-      const content = `
-        <div class="results-screen">
-          <h2>🎉 Game Complete! 🎉</h2>
-          
-          <div class="results-stats">
-            <div class="stat-card">
-              <div class="stat-label">Final Score</div>
-              <div class="stat-value">${formatCurrency(gameState.score)}</div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-label">Accuracy</div>
-              <div class="stat-value">${accuracy}%</div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-label">Questions</div>
-              <div class="stat-value">${correctAnswers}/${totalQuestions}</div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-label">Avg Response</div>
-              <div class="stat-value">${(avgResponseTime / 1000).toFixed(1)}s</div>
-            </div>
-          </div>
-          
-          <div class="button-group">
-            <button class="btn btn-primary" id="playAgain">Play Again</button>
-            <button class="btn btn-secondary" id="exportResults">Export Session</button>
-          </div>
-        </div>
-      `;
-
-      showModal(content);
-
-      document.getElementById('playAgain').addEventListener('click', () => {
-        newGame();
-      });
-
-      document.getElementById('exportResults').addEventListener('click', () => {
-        exportSession();
-      });
-    }
-
-    // ========================================
-    // GAME CONTROLS
-    // ========================================
-
-    function handleTileClick(categoryIndex, clueIndex) {
-      if (gameState.isTileUsed(categoryIndex, clueIndex)) {
-        return;
-      }
-
-      soundEffects.playSelect();
-
-      if (gameState.isDailyDouble(categoryIndex, clueIndex)) {
-        showWagerDialog(categoryIndex, clueIndex);
-      } else {
-        showClueDialog(categoryIndex, clueIndex);
-      }
-    }
-
-    function newGame() {
-      // Clear state
-      gameState.clear();
-      gameState = new GameState();
-      
-      // Initialize new board
-      gameState.initializeBoard();
-      gameState.save();
-
-      // Send initialized xAPI
-      xapiClient.sendInitialized();
-
-      // Hide modal and render
-      hideModal();
-      renderBoard();
-
-      showToast('New game started! Good luck! 🎬', 'daily-double');
-    }
-
-    function exportSession() {
-      const sessionData = {
-        sessionId: gameState.sessionId,
-        startTime: new Date(gameState.sessionStartTime).toISOString(),
-        endTime: new Date().toISOString(),
-        finalScore: gameState.score,
-        answers: gameState.answeredClues,
-        xapiQueue: gameState.xapiQueue,
-        config: {
-          playerName: XAPI_CONFIG.actor.name,
-          playerEmail: XAPI_CONFIG.actor.mbox,
-          timerDuration: GAME_CONFIG.timerDuration,
-          hintsEnabled: GAME_CONFIG.hintsEnabled
-        }
-      };
-
-      const dataStr = JSON.stringify(sessionData, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(dataBlob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `netflix-jeopardy-session-${gameState.sessionId}.json`;
-      link.click();
-      
-      URL.revokeObjectURL(url);
-      showToast('Session exported successfully!', 'correct');
-    }
-
-    // ========================================
-    // SETTINGS
-    // ========================================
-
-    function openSettings() {
-      const panel = document.getElementById('settingsPanel');
-      panel.classList.add('active');
-
-      // Load current values
-      document.getElementById('playerName').value = XAPI_CONFIG.actor.name;
-      document.getElementById('playerEmail').value = XAPI_CONFIG.actor.mbox.replace('mailto:', '');
-      document.getElementById('lrsEndpoint').value = XAPI_CONFIG.endpoint;
-      document.getElementById('lrsKey').value = XAPI_CONFIG.key;
-      document.getElementById('lrsSecret').value = XAPI_CONFIG.secret;
-      document.getElementById('timerDuration').value = GAME_CONFIG.timerDuration;
-      document.getElementById('hintsEnabled').checked = GAME_CONFIG.hintsEnabled;
-      document.getElementById('soundEnabled').checked = GAME_CONFIG.soundEnabled;
-
-      // Focus first input
-      document.getElementById('playerName').focus();
-    }
-
-    function closeSettings() {
-      document.getElementById('settingsPanel').classList.remove('active');
-    }
-
-    function saveSettings() {
-      // Update configs
-      XAPI_CONFIG.actor.name = document.getElementById('playerName').value;
-      XAPI_CONFIG.actor.mbox = `mailto:${document.getElementById('playerEmail').value}`;
-      XAPI_CONFIG.endpoint = document.getElementById('lrsEndpoint').value;
-      XAPI_CONFIG.key = document.getElementById('lrsKey').value;
-      XAPI_CONFIG.secret = document.getElementById('lrsSecret').value;
-      
-      GAME_CONFIG.timerDuration = parseInt(document.getElementById('timerDuration').value);
-      GAME_CONFIG.hintsEnabled = document.getElementById('hintsEnabled').checked;
-      GAME_CONFIG.soundEnabled = document.getElementById('soundEnabled').checked;
-
-      // Save to localStorage
-      localStorage.setItem('jeopardySettings', JSON.stringify({
-        xapi: XAPI_CONFIG,
-        game: GAME_CONFIG
-      }));
-
-      // Update xAPI client
-      xapiClient.config = XAPI_CONFIG;
-      soundEffects.enabled = GAME_CONFIG.soundEnabled;
-
-      showToast('Settings saved successfully!', 'correct');
-      closeSettings();
-    }
-
-    function loadSettings() {
-      const saved = localStorage.getItem('jeopardySettings');
-      if (saved) {
-        const settings = JSON.parse(saved);
-        Object.assign(XAPI_CONFIG, settings.xapi);
-        Object.assign(GAME_CONFIG, settings.game);
-      }
-    }
-
-    // ========================================
-    // KEYBOARD NAVIGATION
-    // ========================================
-
-    function setupKeyboardNavigation() {
-      document.addEventListener('keydown', (e) => {
-        // Only handle keyboard nav when modal is closed
-        if (document.getElementById('modalOverlay').classList.contains('active')) {
-          return;
-        }
-
-        const currentFocus = document.activeElement;
-        if (!currentFocus.classList.contains('tile')) {
-          return;
-        }
-
-        const catIndex = parseInt(currentFocus.dataset.category);
-        const clueIndex = parseInt(currentFocus.dataset.clue);
-
-        let newCat = catIndex;
-        let newClue = clueIndex;
-
-        switch(e.key) {
-          case 'ArrowRight':
-            newCat = Math.min(5, catIndex + 1);
-            e.preventDefault();
-            break;
-          case 'ArrowLeft':
-            newCat = Math.max(0, catIndex - 1);
-            e.preventDefault();
-            break;
-          case 'ArrowDown':
-            newClue = Math.min(4, clueIndex + 1);
-            e.preventDefault();
-            break;
-          case 'ArrowUp':
-            newClue = Math.max(0, clueIndex - 1);
-            e.preventDefault();
-            break;
-          case 'Home':
-            newCat = 0;
-            e.preventDefault();
-            break;
-          case 'End':
-            newCat = 5;
-            e.preventDefault();
-            break;
-          case 'Enter':
-          case ' ':
-            if (!gameState.isTileUsed(catIndex, clueIndex)) {
-              handleTileClick(catIndex, clueIndex);
-            }
-            e.preventDefault();
-            break;
-          default:
-            return;
-        }
-
-        // Find and focus new tile
-        const newTile = document.querySelector(
-          `.tile[data-category="${newCat}"][data-clue="${newClue}"]`
-        );
-        if (newTile && !newTile.disabled) {
-          // Update tabindex
-          document.querySelectorAll('.tile').forEach(t => t.setAttribute('tabindex', '-1'));
-          newTile.setAttribute('tabindex', '0');
-          newTile.focus();
-        }
-      });
-    }
-
-    // ========================================
-    // INITIALIZATION
-    // ========================================
-
-    let gameState = new GameState();
-    let xapiClient;
-    let soundEffects = new SoundEffects();
-
-    function init() {
-      // Load settings
-      loadSettings();
-
-      // Initialize xAPI client
-      xapiClient = new XAPIClient(XAPI_CONFIG);
-
-      // Initialize sound
-      soundEffects.enabled = GAME_CONFIG.soundEnabled;
-
-      // Try to load saved game state
-      const hasState = gameState.load();
-
-      if (hasState && !gameState.gameComplete) {
-        // Resume game
-        renderBoard();
-        showToast('Game resumed from last session', 'daily-double');
-      } else {
-        // Start new game
-        gameState.initializeBoard();
-        gameState.save();
-        renderBoard();
-        
-        // Send initialized xAPI
-        xapiClient.sendInitialized();
-      }
-
-      // Setup event listeners
-      document.getElementById('settingsBtn').addEventListener('click', openSettings);
-      document.getElementById('closeSettings').addEventListener('click', closeSettings);
-      document.getElementById('saveSettings').addEventListener('click', saveSettings);
-      document.getElementById('testXAPI').addEventListener('click', () => {
-        soundEffects.init();
-        xapiClient.testConnection();
-      });
-      document.getElementById('retryXAPI').addEventListener('click', () => {
-        xapiClient.retryQueue();
-      });
-      document.getElementById('exportSession').addEventListener('click', exportSession);
-
-      // Setup keyboard navigation
-      setupKeyboardNavigation();
-
-      // Close modal on overlay click
-      document.getElementById('modalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'modalOverlay') {
-          // Don't close if there's an active clue
-          if (!gameState.currentClue) {
-            hideModal();
-          }
-        }
-      });
-
-      // Initialize sound on user interaction
-      document.body.addEventListener('click', () => {
-        soundEffects.init();
-      }, { once: true });
-    }
-
-    // Start the game when DOM is ready
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', init);
+    document.body.appendChild(wrap);
+    setTimeout(() => wrap.remove(), 2400);
+  },
+
+  /* ---- dialog plumbing ---- */
+  openDialog(html, opts = {}) {
+    this.lastFocusedTile = document.activeElement && document.activeElement.classList.contains("tile") ? document.activeElement : null;
+    this.panelEl.innerHTML = html;
+    this.panelEl.dataset.locked = opts.locked ? "1" : "";
+    this.dialogEl.hidden = false;
+    const first = opts.focus ? this.panelEl.querySelector(opts.focus) : this.panelEl.querySelector("input, button");
+    (first || this.panelEl).focus();
+  },
+  closeDialog() {
+    this.dialogEl.hidden = true;
+    this.panelEl.innerHTML = "";
+    this.renderBoard();
+    const next = this.boardEl.querySelector(".tile[tabindex='0']");
+    if (next) next.focus();
+  },
+  focusables() {
+    return [...this.panelEl.querySelectorAll("button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex='-1'])")].filter(el => el.offsetParent !== null);
+  },
+
+  /* ---- settings ---- */
+  renderSettings() {
+    $("#sName").value = settings.name || ""; $("#sEmail").value = settings.email || "";
+    $("#sEndpoint").value = settings.endpoint || ""; $("#sKey").value = settings.key || ""; $("#sSecret").value = settings.secret || "";
+    $("#sHints").checked = !!settings.hints; $("#sRequireQ").checked = !!settings.requireQuestion; $("#sSound").checked = !!settings.sound;
+    $("#sTimer").value = settings.timer; $("#sTimerVal").textContent = settings.timer;
+    $("#lmsNote").hidden = !launchedByLms;
+    ["sName", "sEmail", "sEndpoint", "sKey", "sSecret"].forEach(id => $("#" + id).disabled = launchedByLms);
+    if (launchedByLms) { const c = xapi.config(); $("#sName").value = c.actor.name || ""; $("#sEmail").value = (c.actor.mbox || "").replace("mailto:", ""); $("#sEndpoint").value = c.endpoint; }
+    this.updateQueueCount();
+  },
+  updateQueueCount() { $("#queueCount").textContent = xapi.queue.length; },
+  setXapiStatus(msg) { $("#xapiStatus").textContent = msg; },
+  openSettings() { this.renderSettings(); $("#settings").hidden = false; $("#scrim").hidden = false; $("#btnSettings").setAttribute("aria-expanded", "true"); $("#sName").disabled ? $("#sHints").focus() : $("#sName").focus(); },
+  closeSettings() { $("#settings").hidden = true; $("#scrim").hidden = true; $("#btnSettings").setAttribute("aria-expanded", "false"); $("#btnSettings").focus(); },
+};
+
+/* ================================ GAME ================================ */
+const Game = {
+  start() {
+    state = storage.get(STORAGE.state, null);
+    const valid = state && state.version === 2 && Array.isArray(state.categories) && state.categories.length === 6;
+    if (!valid) { state = newState(); save(); xapi.sendInitialized(); }
+    UI.renderBoard();
+    if (state.completed) { this.showResults(); return; }
+    if (state.open) this.resumeOpen();
+    else if (cluesDone() > 0) UI.toast("Welcome back: your game was restored.", "ok");
+  },
+  newGame() {
+    this.stopTimer();
+    state = newState(); save();
+    xapi.sendInitialized();
+    UI.dialogEl.hidden = true; UI.panelEl.innerHTML = "";
+    UI.renderBoard();
+    UI.toast("New board ready. Good luck!", "ok");
+    const first = UI.boardEl.querySelector(".tile[tabindex='0']"); if (first) first.focus();
+  },
+
+  openTile(c, r) {
+    if (state.used[key(c, r)] || state.open) return;
+    audio.select();
+    const clue = state.categories[c].clues[r];
+    if (isDailyDouble(c, r)) {
+      state.open = { c, r, phase: "wager", wager: null, hintUsed: false, remainingMs: settings.timer * 1000, startedAt: null };
+      save();
+      this.showWager();
     } else {
-      init();
+      state.open = { c, r, phase: "clue", wager: null, hintUsed: false, remainingMs: settings.timer * 1000, startedAt: Date.now() };
+      save();
+      this.showClue();
     }
-  </script>
+  },
+  resumeOpen() {
+    const o = state.open;
+    if (o.phase === "wager") this.showWager();
+    else if (o.phase === "clue") { o.startedAt = Date.now() - ((settings.timer * 1000) - o.remainingMs); this.showClue(); UI.toast("Resumed with " + Math.ceil(o.remainingMs / 1000) + "s left.", "warn"); }
+    else if (o.phase === "result") { this.showClue(); this.renderResult(o.result); }
+  },
+
+  /* ---- Daily Double wager ---- */
+  wagerMax() { const clue = this.currentClue(); return Math.max(state.score, clue.value); },
+  currentClue() { return state.categories[state.open.c].clues[state.open.r]; },
+  currentCategory() { return state.categories[state.open.c]; },
+  showWager() {
+    audio.dd();
+    const clue = this.currentClue(), max = this.wagerMax();
+    UI.toast("Daily Double!", "dd");
+    UI.openDialog(`
+      <h2 class="dlg-title dd" id="dlgLabel">Daily Double!</h2>
+      <p class="muted">Category: <strong>${escapeHtml(this.currentCategory().name)}</strong> &middot; Your score: <strong>${money(state.score)}</strong></p>
+      <p>Wager between <strong>$5</strong> and <strong>${money(max)}</strong>. Win it or lose it.</p>
+      <form class="wager-form" id="wagerForm" novalidate>
+        <label class="sr-only" for="wagerInput">Wager amount</label>
+        <input type="number" id="wagerInput" inputmode="numeric" min="5" max="${max}" step="1" value="${clue.value}">
+        <span class="quick">
+          <button type="button" class="btn-ghost btn-sm" data-w="${clue.value}">Tile value</button>
+          <button type="button" class="btn-ghost btn-sm" data-w="${max}">All in</button>
+        </span>
+        <button type="submit" class="btn">Lock wager</button>
+      </form>
+      <p class="form-error" id="wagerError" hidden></p>`, { locked: true, focus: "#wagerInput" });
+    const input = $("#wagerInput", UI.panelEl);
+    UI.panelEl.querySelectorAll("[data-w]").forEach(b => b.addEventListener("click", () => { input.value = b.dataset.w; input.focus(); }));
+    $("#wagerForm", UI.panelEl).addEventListener("submit", e => {
+      e.preventDefault();
+      let w = Math.floor(Number(input.value));
+      if (!Number.isFinite(w) || w < 5 || w > max) { $("#wagerError", UI.panelEl).hidden = false; $("#wagerError", UI.panelEl).textContent = `Enter a whole-dollar wager from $5 to ${money(max)}.`; input.focus(); return; }
+      state.open.wager = w; state.open.phase = "clue"; state.open.startedAt = Date.now(); save();
+      this.showClue();
+    });
+  },
+
+  /* ---- Clue dialog ---- */
+  potential() { return state.open.wager ?? this.currentClue().value; },
+  gainIfCorrect() { return state.open.hintUsed ? Math.floor(this.potential() / 2) : this.potential(); },
+  lossIfWrong() { return state.open.hintUsed ? 0 : this.potential(); },
+  showClue() {
+    const o = state.open, clue = this.currentClue(), cat = this.currentCategory();
+    const dd = o.wager != null;
+    UI.openDialog(`
+      <div class="dlg-head">
+        <span class="dlg-cat" id="dlgLabel">${escapeHtml(cat.name)}</span>
+        ${dd ? '<span class="dd-badge">DAILY DOUBLE</span>' : ""}
+        <span class="dlg-value" id="dlgValue"></span>
+        <div class="timer" id="timer" role="timer" aria-label="Time remaining">
+          <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="t-bg" cx="18" cy="18" r="16"/><circle class="t-fg" id="timerArc" cx="18" cy="18" r="16"/></svg>
+          <span class="t-num" id="timerNum">${Math.ceil(o.remainingMs / 1000)}</span>
+        </div>
+      </div>
+      <p class="clue-text">${escapeHtml(clue.prompt)}</p>
+      <div class="hint-row" id="hintRow" ${settings.hints ? "" : "hidden"}>
+        <span class="hint-wrap" id="hintWrap">
+          <button type="button" class="hint-btn" id="hintBtn" aria-describedby="hintTip">&#128161; Hint</button>
+          <span class="hint-tip" id="hintTip" role="tooltip"></span>
+        </span>
+        <div class="hint-reveal" id="hintReveal" hidden></div>
+      </div>
+      <form class="answer-form" id="answerForm" novalidate>
+        <label class="sr-only" for="answerInput">Your response, phrased as a question</label>
+        <input id="answerInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="What is...? / Who is...?">
+        <button type="submit" class="btn" id="submitBtn">Submit</button>
+      </form>
+      <p class="format-note">Phrase your response as a question: &ldquo;Who is&hellip;?&rdquo;, &ldquo;What is&hellip;?&rdquo;, &ldquo;Where is&hellip;?&rdquo;, &ldquo;When was&hellip;?&rdquo;</p>
+      <p class="form-error" id="answerError" role="alert" hidden></p>
+      <div class="dlg-foot" id="dlgFoot"><button type="button" class="btn-ghost btn-sm" id="forfeitBtn"></button></div>
+      <div class="result" id="result" hidden></div>`, { locked: true, focus: "#answerInput" });
+
+    this.refreshValueChip();
+    const hintBtn = $("#hintBtn", UI.panelEl), hintWrap = $("#hintWrap", UI.panelEl);
+    if (hintBtn) {
+      if (o.hintUsed) this.revealHint(); else this.refreshHintTip();
+      hintBtn.addEventListener("click", () => { if (!state.open.hintUsed) { state.open.hintUsed = true; save(); this.revealHint(); this.refreshValueChip(); UI.toast(`Hint used: now playing for ${money(this.gainIfCorrect())}, no penalty.`, "warn"); } });
+      // touch devices have no hover: a tap on the wrapper shows the tooltip first
+      hintWrap.addEventListener("touchstart", () => hintWrap.classList.add("show"), { passive: true });
+    }
+    $("#forfeitBtn", UI.panelEl).addEventListener("click", () => {
+      if (confirm(`Forfeit this clue? You'll lose ${money(this.lossIfWrong())}.`)) this.resolve({ forfeited: true });
+    });
+    $("#answerForm", UI.panelEl).addEventListener("submit", e => { e.preventDefault(); this.submit(); });
+    if (o.phase === "clue") this.startTimer();
+  },
+  refreshValueChip() {
+    const chip = $("#dlgValue", UI.panelEl); if (!chip) return;
+    chip.innerHTML = `${money(this.gainIfCorrect())}${state.open.hintUsed ? `<small>hint used (was ${money(this.potential())})</small>` : state.open.wager != null ? "<small>wager</small>" : ""}`;
+    const f = $("#forfeitBtn", UI.panelEl); if (f) f.textContent = `Forfeit (${state.open.hintUsed ? "no penalty" : "-" + money(this.lossIfWrong())})`;
+    this.refreshHintTip();
+  },
+  refreshHintTip() {
+    const tip = $("#hintTip", UI.panelEl); if (!tip || state.open.hintUsed) return;
+    tip.textContent = `Reveal a hint? A correct response pays ${money(Math.floor(this.potential() / 2))} instead of ${money(this.potential())}, and a miss costs nothing.`;
+  },
+  revealHint() {
+    const clue = this.currentClue();
+    const btn = $("#hintBtn", UI.panelEl), tip = $("#hintTip", UI.panelEl), box = $("#hintReveal", UI.panelEl);
+    if (btn) { btn.disabled = true; btn.innerHTML = "&#128161; Hint used"; }
+    if (tip) tip.textContent = "Hint: " + clue.hint;
+    if (box) { box.hidden = false; box.textContent = "Hint: " + clue.hint; }
+    $("#answerInput", UI.panelEl)?.focus();
+  },
+
+  /* ---- timer ---- */
+  startTimer() {
+    this.stopTimer();
+    const total = settings.timer * 1000;
+    let lastSaved = 0, lastTickSec = -1;
+    const tick = () => {
+      const o = state.open; if (!o || o.phase !== "clue") return;
+      o.remainingMs = Math.max(0, total - (Date.now() - o.startedAt));
+      const sec = Math.ceil(o.remainingMs / 1000);
+      const arc = $("#timerArc", UI.panelEl), num = $("#timerNum", UI.panelEl), t = $("#timer", UI.panelEl);
+      if (arc) arc.style.strokeDashoffset = (100.53 * (1 - o.remainingMs / total)).toFixed(2);
+      if (num && sec !== lastTickSec) {
+        num.textContent = sec; lastTickSec = sec;
+        if (sec <= 5 && sec > 0) { audio.tick(); UI.announce(`${sec} seconds left`); }
+        else if (sec === 10) UI.announce("10 seconds left");
+      }
+      if (t) { t.classList.toggle("warn", sec <= 10 && sec > 5); t.classList.toggle("danger", sec <= 5); }
+      if (Date.now() - lastSaved > 1000) { lastSaved = Date.now(); save(); }
+      if (o.remainingMs <= 0) { this.stopTimer(); this.resolve({ timedOut: true }); }
+    };
+    tick();
+    this.timerHandle = setInterval(tick, 100);
+  },
+  stopTimer() { clearInterval(this.timerHandle); this.timerHandle = null; },
+
+  /* ---- answer flow ---- */
+  submit() {
+    const input = $("#answerInput", UI.panelEl), err = $("#answerError", UI.panelEl);
+    const raw = input.value.trim();
+    if (!raw) { err.hidden = false; err.textContent = "Type a response first."; input.classList.add("shake"); setTimeout(() => input.classList.remove("shake"), 300); input.focus(); return; }
+    if (settings.requireQuestion && !isQuestionFormat(raw)) {
+      err.hidden = false; err.textContent = "Remember to phrase it as a question, like “What is…?” or “Who is…?”";
+      input.classList.add("shake"); setTimeout(() => input.classList.remove("shake"), 300); input.focus(); return;
+    }
+    this.resolve({ response: raw });
+  },
+  resolve({ response = "", timedOut = false, forfeited = false }) {
+    const o = state.open; if (!o || o.phase !== "clue") return;
+    this.stopTimer();
+    const clue = this.currentClue(), cat = this.currentCategory();
+    const correct = !timedOut && !forfeited && answerMatches(response, clue);
+    const delta = correct ? this.gainIfCorrect() : -this.lossIfWrong();
+    const ms = Date.now() - o.startedAt;
+    state.score += delta;
+    state.used[key(o.c, o.r)] = true;
+    const record = {
+      category: cat.name, slug: cat.slug, value: clue.value, difficulty: clue.difficultyRank, prompt: clue.prompt,
+      correctAnswer: clue.correctAnswer, questionForm: questionForm(clue),
+      response, correct, timedOut, forfeited, hintUsed: o.hintUsed,
+      dailyDouble: o.wager != null, wager: o.wager, potential: this.potential(), delta, ms, runningTotal: state.score,
+      at: new Date().toISOString(),
+    };
+    state.answers.push(record);
+    o.phase = "result"; o.result = record;
+    save();
+    UI.renderScore(delta); UI.renderProgress();
+    xapi.sendAnswered(record);
+    xapi.sendScored(delta, state.score, cluesDone());
+    if (correct) { audio.correct(); UI.toast(`Correct! +${money(delta)}`, "ok"); if (delta >= 800) UI.confetti(); }
+    else if (timedOut) { audio.wrong(); UI.toast("Time's up!", "bad"); }
+    else if (forfeited) { UI.toast("Clue forfeited.", "warn"); }
+    else { audio.wrong(); UI.toast(`Incorrect. ${delta ? money(delta) : "No penalty"}`, "bad"); }
+    this.renderResult(record);
+  },
+  renderResult(rec) {
+    UI.panelEl.dataset.locked = "";
+    const form = $("#answerForm", UI.panelEl), foot = $("#dlgFoot", UI.panelEl), res = $("#result", UI.panelEl), timer = $("#timer", UI.panelEl);
+    if (form) form.hidden = true;
+    $("#answerError", UI.panelEl)?.setAttribute("hidden", "");
+    $(".format-note", UI.panelEl)?.setAttribute("hidden", "");
+    $("#hintRow", UI.panelEl)?.setAttribute("hidden", "");
+    if (timer) timer.hidden = true;
+    const title = rec.correct ? "Correct!" : rec.timedOut ? "Time's up" : rec.forfeited ? "Forfeited" : "Incorrect";
+    res.hidden = false; res.className = "result " + (rec.correct ? "ok" : "bad");
+    res.innerHTML = `
+      <h3>${title} <span class="delta">${rec.delta >= 0 ? "+" : ""}${money(rec.delta)}</span></h3>
+      ${rec.response ? `<p class="muted">You responded: &ldquo;${escapeHtml(rec.response)}&rdquo;</p>` : ""}
+      <p class="correct-line">Correct response: <strong>${escapeHtml(rec.questionForm)}</strong></p>`;
+    foot.innerHTML = `<button type="button" class="btn" id="continueBtn">${cluesDone() >= 30 ? "See results" : "Continue"}</button>`;
+    $("#continueBtn", UI.panelEl).addEventListener("click", () => this.closeClue());
+    $("#continueBtn", UI.panelEl).focus();
+  },
+  closeClue() {
+    state.open = null; save();
+    if (cluesDone() >= 30) this.finish();
+    else UI.closeDialog();
+  },
+
+  /* ---- end of game ---- */
+  stats() {
+    const a = state.answers, answered = a.filter(x => !x.forfeited);
+    const correct = a.filter(x => x.correct).length;
+    const avgResponseMs = answered.length ? Math.round(answered.reduce((s, x) => s + x.ms, 0) / answered.length) : 0;
+    return { score: state.score, correct, total: a.length, accuracy: a.length ? +(correct / a.length).toFixed(3) : 0,
+      avgResponseMs, hintsUsed: a.filter(x => x.hintUsed).length, durationMs: Date.now() - new Date(state.startedAt).getTime() };
+  },
+  finish() {
+    if (!state.completed) { state.completed = true; state.completedAt = new Date().toISOString(); save(); xapi.sendCompleted(this.stats()); }
+    this.showResults();
+    if (state.score > 0) UI.confetti();
+  },
+  showResults() {
+    const s = this.stats();
+    const missed = state.answers.filter(x => !x.correct);
+    UI.openDialog(`
+      <h2 class="dlg-title" id="dlgLabel">Game over</h2>
+      <p class="final-score">${money(s.score)}</p>
+      <dl class="stats">
+        <div><dt>Correct</dt><dd>${s.correct}/${s.total}</dd></div>
+        <div><dt>Accuracy</dt><dd>${Math.round(s.accuracy * 100)}%</dd></div>
+        <div><dt>Avg response</dt><dd>${(s.avgResponseMs / 1000).toFixed(1)}s</dd></div>
+        <div><dt>Hints used</dt><dd>${s.hintsUsed}</dd></div>
+      </dl>
+      <div class="dlg-foot" style="justify-content:flex-start">
+        <button type="button" class="btn" id="playAgainBtn">Play again</button>
+        <button type="button" class="btn-ghost" id="exportBtn">Export JSON</button>
+        <button type="button" class="btn-ghost" id="reviewBtn" ${missed.length ? "" : "disabled"}>Review missed clues (${missed.length})</button>
+      </div>
+      <section class="missed" id="missed" hidden>
+        <h3>Missed clues</h3>
+        <ul>${missed.map(m => `<li><div class="q">${escapeHtml(m.category)} &middot; $${m.value}: ${escapeHtml(m.prompt)}</div><div>${escapeHtml(m.questionForm)}</div></li>`).join("")}</ul>
+      </section>`, { locked: true, focus: "#playAgainBtn" });
+    $("#playAgainBtn", UI.panelEl).addEventListener("click", () => this.newGame());
+    $("#exportBtn", UI.panelEl).addEventListener("click", () => downloadSession());
+    $("#reviewBtn", UI.panelEl).addEventListener("click", () => { const m = $("#missed", UI.panelEl); m.hidden = !m.hidden; });
+  },
+};
+
+/* ============================ SESSION EXPORT ========================== */
+function downloadSession() {
+  const c = xapi.config();
+  const data = {
+    exportedAt: new Date().toISOString(),
+    app: XAPI_DEFAULTS.appName,
+    actor: c.actor, activityId: c.activityId, endpoint: c.endpoint, registration: c.registration || null,
+    settings: { hints: settings.hints, requireQuestion: settings.requireQuestion, timer: settings.timer },
+    game: { startedAt: state.startedAt, completedAt: state.completedAt || null, score: state.score, categories: state.categories.map(x => x.name),
+      dailyDouble: state.dailyDouble, answers: state.answers, stats: Game.stats() },
+    xapi: { queued: xapi.queue.length, pending: xapi.queue.map(q => ({ id: q.statement.id, verb: q.statement.verb.display["en-US"], attempts: q.attempts, lastError: q.lastError })), deliveryLog: xapi.log },
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `netflix-jeopardy-session-${Date.now()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ============================== INPUT ================================ */
+// Board: arrow keys move between tiles (used tiles skipped), Home/End jump within the row, Enter/Space opens.
+UI.boardEl.addEventListener("keydown", e => {
+  const t = e.target.closest(".tile"); if (!t) return;
+  const c = +t.dataset.c, r = +t.dataset.r;
+  const find = (cc, rr) => UI.boardEl.querySelector(`.tile[data-c="${cc}"][data-r="${rr}"]`);
+  const step = (dc, dr) => { let cc = c + dc, rr = r + dr; while (cc >= 0 && cc < 6 && rr >= 0 && rr < 5) { const el = find(cc, rr); if (el && !el.disabled) return el; cc += dc; rr += dr; } return null; };
+  let next = null;
+  switch (e.key) {
+    case "ArrowRight": next = step(1, 0); break;
+    case "ArrowLeft": next = step(-1, 0); break;
+    case "ArrowDown": next = step(0, 1); break;
+    case "ArrowUp": next = step(0, -1); break;
+    case "Home": next = [...UI.boardEl.querySelectorAll(`.tile[data-r="${r}"]:not(:disabled)`)][0]; break;
+    case "End": next = [...UI.boardEl.querySelectorAll(`.tile[data-r="${r}"]:not(:disabled)`)].pop(); break;
+    case "Enter": case " ": e.preventDefault(); t.click(); return;
+    default: return;
+  }
+  e.preventDefault();
+  if (next) { UI.setRovingFocus(next); next.focus(); }
+});
+UI.boardEl.addEventListener("focusin", e => { const t = e.target.closest(".tile"); if (t) UI.setRovingFocus(t); });
+
+// Dialog: focus trap; ESC only closes once the clue is resolved.
+document.addEventListener("keydown", e => {
+  if (UI.dialogEl.hidden) {
+    if (e.key === "Escape" && !$("#settings").hidden) UI.closeSettings();
+    return;
+  }
+  if (e.key === "Tab") {
+    const f = UI.focusables(); if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (e.shiftKey && (i <= 0)) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && (i === f.length - 1 || i === -1)) { e.preventDefault(); f[0].focus(); }
+  } else if (e.key === "Escape") {
+    if (UI.panelEl.dataset.locked) { UI.toast("Answer or forfeit the clue first.", "warn"); }
+    else if (state.open && state.open.phase === "result") Game.closeClue();
+  }
+});
+// Clicking the dark backdrop never dismisses a live clue.
+UI.dialogEl.addEventListener("click", e => { if (e.target === UI.dialogEl && !UI.panelEl.dataset.locked && state.open?.phase === "result") Game.closeClue(); });
+
+/* ============================= SETTINGS UI ============================ */
+$("#btnSettings").addEventListener("click", () => UI.openSettings());
+$("#btnCloseSettings").addEventListener("click", () => UI.closeSettings());
+$("#scrim").addEventListener("click", () => UI.closeSettings());
+$("#sTimer").addEventListener("input", e => $("#sTimerVal").textContent = e.target.value);
+$("#settingsForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!launchedByLms) {
+    settings.name = $("#sName").value.trim() || "Player";
+    settings.email = $("#sEmail").value.trim() || "player@example.com";
+    settings.endpoint = $("#sEndpoint").value.trim();
+    settings.key = $("#sKey").value.trim();
+    settings.secret = $("#sSecret").value;
+  }
+  settings.hints = $("#sHints").checked;
+  settings.requireQuestion = $("#sRequireQ").checked;
+  settings.sound = $("#sSound").checked;
+  settings.timer = Math.min(45, Math.max(15, +$("#sTimer").value || 30));
+  storage.set(STORAGE.settings, settings);
+  UI.toast("Settings saved.", "ok");
+  UI.setXapiStatus(xapi.ready() ? "LRS configured." : "No LRS configured yet.");
+  if (xapi.queue.length) xapi.flush(true);
+});
+$("#btnTest").addEventListener("click", async () => {
+  if (!xapi.ready()) { UI.setXapiStatus("Enter the endpoint, key and secret (and save) before testing."); return; }
+  UI.setXapiStatus("Sending test statement...");
+  await xapi.sendTest();
+  if (!xapi.queue.length) UI.toast("Test statement delivered.", "ok");
+});
+$("#btnRetry").addEventListener("click", () => xapi.flush(true));
+$("#btnExport").addEventListener("click", () => downloadSession());
+$("#btnNewGame").addEventListener("click", () => { if (confirm("Start a new game? The current board and score will be discarded.")) { UI.closeSettings(); Game.newGame(); } });
+window.addEventListener("online", () => xapi.flush(true));
+
+/* ================================ BOOT =============================== */
+Game.start();
+if (xapi.queue.length) xapi.flush(true);
+if (!xapi.ready() && !launchedByLms) UI.setXapiStatus("No LRS configured: statements are queued locally.");
+
+// Expose a couple of hooks for debugging from the console.
+window.NetflixJeopardy = { get state() { return state; }, xapi, downloadSession, Game, settings };
+})();
+</script>
 </body>
 </html>
