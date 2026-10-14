@@ -478,67 +478,74 @@ const VERBS = {
   experienced: "http://adlnet.gov/expapi/verbs/experienced",
 };
 const VALUES = [200, 400, 600, 800, 1000];
-const STORAGE = { state: "nfj_state_v2", settings: "nfj_settings_v2", queue: "nfj_xapi_queue_v2", log: "nfj_xapi_log_v2" };
+const STORAGE = { state: "nfj_state_v3", settings: "nfj_settings_v2", queue: "nfj_xapi_queue_v2", log: "nfj_xapi_log_v2" };
 
 /* =============================== DATA ================================= */
 // Each clue: value, difficultyRank, prompt, answerPrefix (for the reveal), correctAnswer,
-// acceptedAlternates, hint, sourceNote. Prompts stay mostly within season 1.
+// acceptedAlternates, hint, sourceNote. Recent hits (2024-2026), pitched slightly easier.
 const CATEGORY_POOL = [
-  { name: "Stranger Things", clues: [
-    { value: 200, difficultyRank: 1, prompt: "Eleven's favorite frozen breakfast treat, which she first tastes at Benny's diner.", answerPrefix: "What are", correctAnswer: "Eggos", acceptedAlternates: ["Eggo", "Eggo waffles", "waffles", "frozen waffles"], hint: "A toaster staple with a two-syllable brand name.", sourceNote: "S1" },
-    { value: 400, difficultyRank: 2, prompt: "This fictional Indiana town is home to the kids, the arcade, and the mysterious lab.", answerPrefix: "What is", correctAnswer: "Hawkins", acceptedAlternates: ["Hawkins Indiana"], hint: "The town shares its name with the lab.", sourceNote: "S1" },
-    { value: 600, difficultyRank: 3, prompt: "In Hawkins, this shadowy research facility is ground zero for portals to the Upside Down.", answerPrefix: "What is", correctAnswer: "Hawkins National Laboratory", acceptedAlternates: ["Hawkins Lab", "HNL", "the lab", "Hawkins Laboratory"], hint: "Initials: H.N.L.", sourceNote: "S1" },
-    { value: 800, difficultyRank: 4, prompt: "Joyce Byers talks to her missing son through these holiday decorations and an alphabet painted on the wall.", answerPrefix: "What are", correctAnswer: "Christmas lights", acceptedAlternates: ["lights", "string lights", "fairy lights", "the lights"], hint: "You string them up in December.", sourceNote: "S1 E3" },
-    { value: 1000, difficultyRank: 5, prompt: "The boys name the creature from the Upside Down after this Dungeons & Dragons demon prince.", answerPrefix: "What is", correctAnswer: "the Demogorgon", acceptedAlternates: ["Demogorgon"], hint: "A two-headed demon from D&D lore; starts with D.", sourceNote: "S1" },
-  ]},
-  { name: "The Witcher", clues: [
-    { value: 200, difficultyRank: 1, prompt: "Henry Cavill's white-haired monster hunter, also known as the White Wolf.", answerPrefix: "Who is", correctAnswer: "Geralt of Rivia", acceptedAlternates: ["Geralt"], hint: "First name starts with G.", sourceNote: "S1" },
-    { value: 400, difficultyRank: 2, prompt: "Geralt gives every horse he has ever owned this same name.", answerPrefix: "What is", correctAnswer: "Roach", acceptedAlternates: [], hint: "Also an unwelcome kitchen insect.", sourceNote: "S1" },
-    { value: 600, difficultyRank: 3, prompt: "This bard writes the earworm \"Toss a Coin to Your Witcher.\"", answerPrefix: "Who is", correctAnswer: "Jaskier", acceptedAlternates: ["Dandelion"], hint: "Called Dandelion in the English-language books and games.", sourceNote: "S1 E2" },
-    { value: 800, difficultyRank: 4, prompt: "The princess of Cintra bound to Geralt by the Law of Surprise.", answerPrefix: "Who is", correctAnswer: "Ciri", acceptedAlternates: ["Cirilla", "Princess Cirilla", "Ciri of Cintra", "Princess Ciri"], hint: "Nicknamed the Lion Cub of Cintra.", sourceNote: "S1" },
-    { value: 1000, difficultyRank: 5, prompt: "The Witcher novels were written by this Polish author.", answerPrefix: "Who is", correctAnswer: "Andrzej Sapkowski", acceptedAlternates: ["Sapkowski"], hint: "Surname starts with S and ends with -ski.", sourceNote: "Books" },
-  ]},
-  { name: "Money Heist (La Casa de Papel)", clues: [
-    { value: 200, difficultyRank: 1, prompt: "The robbers wear masks bearing the face of this Spanish surrealist painter.", answerPrefix: "Who is", correctAnswer: "Salvador Dalí", acceptedAlternates: ["Dali", "Salvador Dali"], hint: "Famous for melting clocks and a very pointy mustache.", sourceNote: "S1" },
-    { value: 400, difficultyRank: 2, prompt: "The mastermind who recruits and trains the crew goes by this academic title.", answerPrefix: "Who is", correctAnswer: "the Professor", acceptedAlternates: ["Professor", "El Profesor", "Profesor"], hint: "He could be teaching at a university.", sourceNote: "S1" },
-    { value: 600, difficultyRank: 3, prompt: "Tokyo, Berlin, Nairobi, Rio: every robber's code name is one of these.", answerPrefix: "What are", correctAnswer: "cities", acceptedAlternates: ["city", "city names", "world cities", "capital cities", "a city"], hint: "Places you'd find on a world map, but not countries.", sourceNote: "S1" },
-    { value: 800, difficultyRank: 4, prompt: "The first heist targets this institution, where the crew prints their own money instead of stealing it.", answerPrefix: "What is", correctAnswer: "the Royal Mint of Spain", acceptedAlternates: ["Royal Mint", "the Mint", "Spanish Royal Mint", "Fábrica Nacional de Moneda y Timbre", "Royal Mint Spain"], hint: "Where a country manufactures its banknotes and coins.", sourceNote: "S1" },
-    { value: 1000, difficultyRank: 5, prompt: "This Italian anti-fascist folk song becomes the crew's anthem.", answerPrefix: "What is", correctAnswer: "Bella Ciao", acceptedAlternates: ["Bella Chao"], hint: "Two words; the second is Italian for goodbye.", sourceNote: "S1" },
-  ]},
   { name: "Squid Game", clues: [
-    { value: 200, difficultyRank: 1, prompt: "The first game the 456 players face, overseen by a giant singing doll.", answerPrefix: "What is", correctAnswer: "Red Light, Green Light", acceptedAlternates: ["Red Light Green Light", "Green Light Red Light", "Mugunghwa"], hint: "Freeze when the doll turns around.", sourceNote: "S1 E1" },
-    { value: 400, difficultyRank: 2, prompt: "The number worn by protagonist Seong Gi-hun.", answerPrefix: "What is", correctAnswer: "456", acceptedAlternates: ["Player 456", "four fifty six", "four hundred fifty six"], hint: "Same as the number of players.", sourceNote: "S1" },
-    { value: 600, difficultyRank: 3, prompt: "Players must carve a shape out of this brittle Korean honeycomb candy; the umbrella is the cruel one.", answerPrefix: "What is", correctAnswer: "dalgona", acceptedAlternates: ["dalgona candy", "honeycomb", "honeycomb candy", "ppopgi", "sugar honeycomb", "honeycomb toffee"], hint: "Korean sugar candy whose name starts with D.", sourceNote: "S1 E3" },
-    { value: 800, difficultyRank: 4, prompt: "The masked guards' ranks are marked by these three shapes, which also form the show's logo.", answerPrefix: "What are", correctAnswer: "circle, triangle and square", acceptedAlternates: ["circle triangle square", "circle triangle and square", "triangle circle square", "square circle triangle", "square triangle circle", "triangle square circle", "circle square triangle", "shapes", "geometric shapes"], hint: "Three basic geometric shapes.", sourceNote: "S1" },
-    { value: 1000, difficultyRank: 5, prompt: "Squid Game's creator, who wrote and directed every episode of season 1.", answerPrefix: "Who is", correctAnswer: "Hwang Dong-hyuk", acceptedAlternates: ["Hwang Dong hyuk", "Dong-hyuk Hwang", "Hwang"], hint: "Surname: Hwang.", sourceNote: "S1" },
+    { value: 200, difficultyRank: 1, prompt: "Seong Gi-hun returns to the games wearing this same three-digit player number.", answerPrefix: "What is", correctAnswer: "456", acceptedAlternates: ["Player 456", "four fifty six", "four hundred fifty six", "number 456"], hint: "The highest number in the game.", sourceNote: "S2" },
+    { value: 400, difficultyRank: 2, prompt: "Freeze when the giant singing doll turns around! This deadly first game is back in season 2.", answerPrefix: "What is", correctAnswer: "Red Light, Green Light", acceptedAlternates: ["Red Light Green Light", "Green Light Red Light", "Red Light"], hint: "Two colors you'd see on a traffic signal.", sourceNote: "S2" },
+    { value: 600, difficultyRank: 3, prompt: "Players race into rooms in small groups while a carousel spins in this season 2 game, whose name means to socialize.", answerPrefix: "What is", correctAnswer: "Mingle", acceptedAlternates: ["Mingle game", "the Mingle game"], hint: "What you do at a party. Starts with M.", sourceNote: "S2" },
+    { value: 800, difficultyRank: 4, prompt: "Lee Byung-hun plays this masked boss who runs the games and secretly joins them as Player 001.", answerPrefix: "Who is", correctAnswer: "the Front Man", acceptedAlternates: ["Front Man", "Frontman", "Hwang In-ho", "In-ho"], hint: "His title describes where he stands: at the front.", sourceNote: "S2" },
+    { value: 1000, difficultyRank: 5, prompt: "This two-time Oscar winner surprises viewers in the final scene of season 3 as a recruiter in Los Angeles.", answerPrefix: "Who is", correctAnswer: "Cate Blanchett", acceptedAlternates: ["Blanchett", "Kate Blanchett"], hint: "Australian star of Tár and Blue Jasmine.", sourceNote: "S3" },
   ]},
-  { name: "Bridgerton", clues: [
-    { value: 200, difficultyRank: 1, prompt: "The anonymous gossip columnist whose pamphlets scandalize the ton.", answerPrefix: "Who is", correctAnswer: "Lady Whistledown", acceptedAlternates: ["Whistledown"], hint: "Lady W.", sourceNote: "S1" },
-    { value: 400, difficultyRank: 2, prompt: "The eight Bridgerton siblings are named alphabetically; this eldest son holds the title of viscount.", answerPrefix: "Who is", correctAnswer: "Anthony", acceptedAlternates: ["Anthony Bridgerton", "Viscount Bridgerton", "Lord Bridgerton"], hint: "First letter of the alphabet.", sourceNote: "S1" },
-    { value: 600, difficultyRank: 3, prompt: "Daphne's season-one match, the brooding Duke of Hastings.", answerPrefix: "Who is", correctAnswer: "Simon Basset", acceptedAlternates: ["Simon", "the Duke of Hastings", "Duke of Hastings", "Simon Bassett", "Duke Hastings"], hint: "First name Simon.", sourceNote: "S1" },
-    { value: 800, difficultyRank: 4, prompt: "Bridgerton adapts the Regency romance novels of this American author.", answerPrefix: "Who is", correctAnswer: "Julia Quinn", acceptedAlternates: ["Quinn"], hint: "Surname rhymes with win.", sourceNote: "Books" },
-    { value: 1000, difficultyRank: 5, prompt: "Her company Shondaland brought Bridgerton to Netflix as its first scripted series there.", answerPrefix: "Who is", correctAnswer: "Shonda Rhimes", acceptedAlternates: ["Shonda", "Rhimes"], hint: "She also created Grey's Anatomy.", sourceNote: "Production" },
+  { name: "Wednesday", clues: [
+    { value: 200, difficultyRank: 1, prompt: "This disembodied hand is Wednesday's most loyal sidekick.", answerPrefix: "What is", correctAnswer: "Thing", acceptedAlternates: ["Thing the hand", "the hand"], hint: "Its name is the vaguest word in English.", sourceNote: "S1-S2" },
+    { value: 400, difficultyRank: 2, prompt: "Wednesday attends this gothic boarding school for outcasts.", answerPrefix: "What is", correctAnswer: "Nevermore Academy", acceptedAlternates: ["Nevermore"], hint: "Quoth the raven...", sourceNote: "S1-S2" },
+    { value: 600, difficultyRank: 3, prompt: "This actress plays the deadpan, braided Wednesday Addams.", answerPrefix: "Who is", correctAnswer: "Jenna Ortega", acceptedAlternates: ["Ortega"], hint: "First name Jenna.", sourceNote: "Cast" },
+    { value: 800, difficultyRank: 4, prompt: "The director of Beetlejuice and Edward Scissorhands, he directs episodes of Wednesday and executive produces.", answerPrefix: "Who is", correctAnswer: "Tim Burton", acceptedAlternates: ["Burton"], hint: "First name Tim.", sourceNote: "Production" },
+    { value: 1000, difficultyRank: 5, prompt: "Her song \"Bloody Mary\" soundtracked the viral Wednesday dance trend, and she guest-stars in season 2.", answerPrefix: "Who is", correctAnswer: "Lady Gaga", acceptedAlternates: ["Gaga"], hint: "Little Monsters call her Mother Monster.", sourceNote: "S2" },
   ]},
-  { name: "Black Mirror", clues: [
-    { value: 200, difficultyRank: 1, prompt: "Black Mirror is this type of series: every episode has a new cast, setting and story.", answerPrefix: "What is", correctAnswer: "an anthology", acceptedAlternates: ["anthology", "anthology series", "an anthology series"], hint: "Starts with 'anth'.", sourceNote: "Format" },
-    { value: 400, difficultyRank: 2, prompt: "The British satirist who created the series.", answerPrefix: "Who is", correctAnswer: "Charlie Brooker", acceptedAlternates: ["Brooker"], hint: "Shares a first name with Chaplin.", sourceNote: "Creator" },
-    { value: 600, difficultyRank: 3, prompt: "In \"Nosedive,\" everyone rates everyone else out of this many stars.", answerPrefix: "What is", correctAnswer: "five", acceptedAlternates: ["5", "five stars", "5 stars"], hint: "The same as a perfect ride-share rating.", sourceNote: "S3 E1" },
-    { value: 800, difficultyRank: 4, prompt: "This 2018 interactive film let viewers choose the fate of a young programmer in 1984.", answerPrefix: "What is", correctAnswer: "Bandersnatch", acceptedAlternates: ["Black Mirror: Bandersnatch", "Black Mirror Bandersnatch"], hint: "Named after a creature from Lewis Carroll.", sourceNote: "2018" },
-    { value: 1000, difficultyRank: 5, prompt: "Before moving to Netflix, Black Mirror first aired on this British broadcaster.", answerPrefix: "What is", correctAnswer: "Channel 4", acceptedAlternates: ["Channel Four"], hint: "A number between three and five.", sourceNote: "2011" },
+  { name: "Stranger Things", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Eleven's favorite frozen breakfast food comes out of the toaster.", answerPrefix: "What are", correctAnswer: "Eggos", acceptedAlternates: ["Eggo", "Eggo waffles", "waffles", "frozen waffles"], hint: "\"Leggo my ____.\"", sourceNote: "S1-S5" },
+    { value: 400, difficultyRank: 2, prompt: "The fictional Indiana town where all the strangeness happens.", answerPrefix: "What is", correctAnswer: "Hawkins", acceptedAlternates: ["Hawkins Indiana"], hint: "Starts with H, like a bird of prey.", sourceNote: "S1-S5" },
+    { value: 600, difficultyRank: 3, prompt: "The dark, flipped mirror dimension the kids keep battling.", answerPrefix: "What is", correctAnswer: "the Upside Down", acceptedAlternates: ["Upside Down", "the upsidedown"], hint: "The opposite of right side up.", sourceNote: "S1-S5" },
+    { value: 800, difficultyRank: 4, prompt: "The final season's villain, once known as Henry Creel, shares his name with a dark Dungeons & Dragons wizard.", answerPrefix: "Who is", correctAnswer: "Vecna", acceptedAlternates: [], hint: "Five letters, starts with V.", sourceNote: "S4-S5" },
+    { value: 1000, difficultyRank: 5, prompt: "Stranger Things said goodbye with a series finale that premiered on this festive night at the end of 2025.", answerPrefix: "What is", correctAnswer: "New Year's Eve", acceptedAlternates: ["New Years Eve", "New Year Eve", "December 31", "December 31st", "Dec 31"], hint: "The night the ball drops in Times Square.", sourceNote: "S5" },
   ]},
-  { name: "Netflix Original Films", clues: [
-    { value: 200, difficultyRank: 1, prompt: "Sandra Bullock must keep a blindfold on to survive in this 2018 thriller.", answerPrefix: "What is", correctAnswer: "Bird Box", acceptedAlternates: [], hint: "A feathered animal plus a container.", sourceNote: "2018" },
-    { value: 400, difficultyRank: 2, prompt: "Chris Hemsworth plays mercenary Tyler Rake in this 2020 action film.", answerPrefix: "What is", correctAnswer: "Extraction", acceptedAlternates: [], hint: "Something a dentist does.", sourceNote: "2020" },
-    { value: 600, difficultyRank: 3, prompt: "Alfonso Cuarón's black-and-white memory piece about 1970s Mexico City, named after a neighborhood.", answerPrefix: "What is", correctAnswer: "Roma", acceptedAlternates: [], hint: "Also the Italian name of Italy's capital.", sourceNote: "2018" },
-    { value: 800, difficultyRank: 4, prompt: "Martin Scorsese's 2019 mob epic reuniting De Niro, Pacino and Pesci.", answerPrefix: "What is", correctAnswer: "The Irishman", acceptedAlternates: ["Irishman"], hint: "A nationality plus 'man'.", sourceNote: "2019" },
-    { value: 1000, difficultyRank: 5, prompt: "This 2022 German-language WWI film won four Oscars, including Best International Feature.", answerPrefix: "What is", correctAnswer: "All Quiet on the Western Front", acceptedAlternates: ["Im Westen nichts Neues", "All Quiet"], hint: "Based on the Erich Maria Remarque novel.", sourceNote: "2022" },
+  { name: "KPop Demon Hunters", clues: [
+    { value: 200, difficultyRank: 1, prompt: "The film's girl group secretly uses its music to fight these supernatural creatures.", answerPrefix: "What are", correctAnswer: "demons", acceptedAlternates: ["demon", "the demons"], hint: "It's right there in the title.", sourceNote: "2025" },
+    { value: 400, difficultyRank: 2, prompt: "The heroic trio's group name is spelled with a slash in the middle.", answerPrefix: "What is", correctAnswer: "HUNTR/X", acceptedAlternates: ["Huntrix", "Huntr x", "Hunters"], hint: "Sounds like \"hunt tricks.\"", sourceNote: "2025" },
+    { value: 600, difficultyRank: 3, prompt: "The rival boy band whose charming members are secretly demons.", answerPrefix: "Who are", correctAnswer: "the Saja Boys", acceptedAlternates: ["Saja Boys", "Saja"], hint: "____ Boys. Starts with S.", sourceNote: "2025" },
+    { value: 800, difficultyRank: 4, prompt: "This chart-topping power anthem from the film shares its name with a precious metal.", answerPrefix: "What is", correctAnswer: "Golden", acceptedAlternates: ["Gold"], hint: "What an Olympic champion's medal is made of.", sourceNote: "2025" },
+    { value: 1000, difficultyRank: 5, prompt: "The group's leader, voiced by Arden Cho, hides a secret demon heritage.", answerPrefix: "Who is", correctAnswer: "Rumi", acceptedAlternates: ["Roomy"], hint: "Four letters; also the name of a famous Persian poet.", sourceNote: "2025" },
   ]},
-  { name: "International Hits on Netflix", clues: [
-    { value: 200, difficultyRank: 1, prompt: "Netflix's first German original: a small town, a cave, and tangled time travel.", answerPrefix: "What is", correctAnswer: "Dark", acceptedAlternates: [], hint: "The opposite of light.", sourceNote: "2017" },
-    { value: 400, difficultyRank: 2, prompt: "In this K-drama, a South Korean heiress paraglides into North Korea and falls for an army captain.", answerPrefix: "What is", correctAnswer: "Crash Landing on You", acceptedAlternates: ["Crash Landing", "CLOY"], hint: "The title describes a very rough touchdown.", sourceNote: "2019" },
-    { value: 600, difficultyRank: 3, prompt: "Omar Sy plays a gentleman thief inspired by Arsène Lupin in this French series.", answerPrefix: "What is", correctAnswer: "Lupin", acceptedAlternates: [], hint: "Same name as the fictional thief.", sourceNote: "2021" },
-    { value: 800, difficultyRank: 4, prompt: "This Spanish teen drama unfolds at the exclusive private school Las Encinas.", answerPrefix: "What is", correctAnswer: "Elite", acceptedAlternates: ["Élite"], hint: "Means the best of the best.", sourceNote: "2018" },
-    { value: 1000, difficultyRank: 5, prompt: "Netflix's first Brazilian original, in which 20-year-olds compete for a place in a utopia called the Offshore.", answerPrefix: "What is", correctAnswer: "3%", acceptedAlternates: ["three percent", "3 percent", "Three Percent"], hint: "A very small percentage.", sourceNote: "2016" },
+  { name: "Adolescence", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Adolescence opens with police arresting Jamie Miller, a boy of this age, in a dawn raid.", answerPrefix: "What is", correctAnswer: "13", acceptedAlternates: ["thirteen", "13 years old", "thirteen years old"], hint: "Officially a teenager, but only just.", sourceNote: "2025" },
+    { value: 400, difficultyRank: 2, prompt: "Every episode of Adolescence was filmed this way: one continuous shot with no cuts.", answerPrefix: "What is", correctAnswer: "one take", acceptedAlternates: ["a single take", "single take", "one shot", "single shot", "one continuous take", "continuous take", "a oner", "oner", "one continuous shot", "a single shot"], hint: "The camera never stops rolling: it's all in one ____.", sourceNote: "2025" },
+    { value: 600, difficultyRank: 3, prompt: "Adolescence tells its story in this many hour-long episodes.", answerPrefix: "What is", correctAnswer: "four", acceptedAlternates: ["4", "four episodes", "4 episodes"], hint: "The same as the number of seasons in a year.", sourceNote: "2025" },
+    { value: 800, difficultyRank: 4, prompt: "This British actor co-created the series and plays Jamie's dad, Eddie.", answerPrefix: "Who is", correctAnswer: "Stephen Graham", acceptedAlternates: ["Graham", "Steven Graham"], hint: "First name Stephen; also starred in Boiling Point.", sourceNote: "2025" },
+    { value: 1000, difficultyRank: 5, prompt: "Newcomer Owen Cooper made his screen debut playing this character.", answerPrefix: "Who is", correctAnswer: "Jamie Miller", acceptedAlternates: ["Jamie"], hint: "The boy who's arrested in episode 1.", sourceNote: "2025" },
+  ]},
+  { name: "Netflix films 2024-2026", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Adam Sandler returned to the golf course in this 2025 sequel.", answerPrefix: "What is", correctAnswer: "Happy Gilmore 2", acceptedAlternates: ["Happy Gilmore Two", "Happy Gilmore"], hint: "The original came out in 1996.", sourceNote: "2025" },
+    { value: 400, difficultyRank: 2, prompt: "Matt Damon and Ben Affleck play Miami cops who find a stash of cash in this 2026 action thriller.", answerPrefix: "What is", correctAnswer: "The Rip", acceptedAlternates: ["Rip"], hint: "Three letters: what happens to jeans with a tear.", sourceNote: "2026" },
+    { value: 600, difficultyRank: 3, prompt: "Taron Egerton plays a TSA agent blackmailed on Christmas Eve in this airport thriller.", answerPrefix: "What is", correctAnswer: "Carry-On", acceptedAlternates: ["Carry On", "Carryon"], hint: "The kind of bag you take on the plane.", sourceNote: "2024" },
+    { value: 800, difficultyRank: 4, prompt: "Cameron Diaz came out of retirement to star with Jamie Foxx in this 2025 spy comedy.", answerPrefix: "What is", correctAnswer: "Back in Action", acceptedAlternates: [], hint: "What you'd say about a returning star: she's ____.", sourceNote: "2025" },
+    { value: 1000, difficultyRank: 5, prompt: "Guillermo del Toro's 2025 take on Mary Shelley's classic, with Oscar Isaac and Jacob Elordi.", answerPrefix: "What is", correctAnswer: "Frankenstein", acceptedAlternates: [], hint: "It's alive!", sourceNote: "2025" },
+  ]},
+  { name: "Netflix Live", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Jake Paul fought this 58-year-old boxing legend in Netflix's record-setting November 2024 livestream.", answerPrefix: "Who is", correctAnswer: "Mike Tyson", acceptedAlternates: ["Tyson", "Iron Mike"], hint: "Nicknamed \"Iron Mike.\"", sourceNote: "2024" },
+    { value: 400, difficultyRank: 2, prompt: "This weekly WWE wrestling show moved to Netflix in January 2025.", answerPrefix: "What is", correctAnswer: "Raw", acceptedAlternates: ["WWE Raw", "Monday Night Raw", "WWE"], hint: "Also how you'd describe sushi.", sourceNote: "2025" },
+    { value: 600, difficultyRank: 3, prompt: "She performed a country-themed halftime show during Netflix's first Christmas Day NFL games in 2024.", answerPrefix: "Who is", correctAnswer: "Beyoncé", acceptedAlternates: ["Beyonce", "Queen Bey", "Beyonce Knowles"], hint: "Her album was Cowboy Carter.", sourceNote: "2024" },
+    { value: 800, difficultyRank: 4, prompt: "Jake Paul won the fight by this kind of decision, meaning all three judges scored it for him.", answerPrefix: "What is", correctAnswer: "a unanimous decision", acceptedAlternates: ["unanimous", "unanimous decision"], hint: "Everyone agreed.", sourceNote: "2024" },
+    { value: 1000, difficultyRank: 5, prompt: "On the same night, Katie Taylor beat this rival in a rematch many called the best fight of the card.", answerPrefix: "Who is", correctAnswer: "Amanda Serrano", acceptedAlternates: ["Serrano"], hint: "Puerto Rican champion; surname starts with S.", sourceNote: "2024" },
+  ]},
+  { name: "Bingeworthy series", clues: [
+    { value: 200, difficultyRank: 1, prompt: "Kristen Bell plays a podcaster who falls for a rabbi in this rom-com series.", answerPrefix: "What is", correctAnswer: "Nobody Wants This", acceptedAlternates: [], hint: "The title sounds like a grumpy complaint.", sourceNote: "2024-2025" },
+    { value: 400, difficultyRank: 2, prompt: "In Arcane, sisters Vi and this blue-haired troublemaker end up on opposite sides.", answerPrefix: "Who is", correctAnswer: "Jinx", acceptedAlternates: ["Powder"], hint: "Also a word for bad luck.", sourceNote: "S2" },
+    { value: 600, difficultyRank: 3, prompt: "Keira Knightley plays a spy posing as a politician's wife in this London thriller.", answerPrefix: "What is", correctAnswer: "Black Doves", acceptedAlternates: ["Black Dove"], hint: "A dark-colored bird of peace.", sourceNote: "2024" },
+    { value: 800, difficultyRank: 4, prompt: "Robert De Niro plays a former U.S. president investigating a massive cyberattack in this 2025 thriller.", answerPrefix: "What is", correctAnswer: "Zero Day", acceptedAlternates: ["Zeroday"], hint: "A number plus a unit of time.", sourceNote: "2025" },
+    { value: 1000, difficultyRank: 5, prompt: "Uzo Aduba plays a bird-watching detective solving a murder in the White House in this whodunit.", answerPrefix: "What is", correctAnswer: "The Residence", acceptedAlternates: ["Residence"], hint: "Another word for a home.", sourceNote: "2025" },
+  ]},
+  { name: "2026's biggest hits", clues: [
+    { value: 200, difficultyRank: 1, prompt: "This YouTube teacher, famous for songs with toddlers, had Netflix's most-watched kids show of early 2026.", answerPrefix: "Who is", correctAnswer: "Ms. Rachel", acceptedAlternates: ["Miss Rachel", "Ms Rachel", "Rachel"], hint: "First name Rachel.", sourceNote: "H1 2026" },
+    { value: 400, difficultyRank: 2, prompt: "In ONE PIECE, Monkey D. Luffy dreams of becoming king of these.", answerPrefix: "What are", correctAnswer: "pirates", acceptedAlternates: ["pirate", "the pirates"], hint: "Ahoy, matey!", sourceNote: "H1 2026" },
+    { value: 600, difficultyRank: 3, prompt: "Bridgerton season 4 pulled 100 million views by focusing on this second-eldest Bridgerton brother.", answerPrefix: "Who is", correctAnswer: "Benedict", acceptedAlternates: ["Benedict Bridgerton"], hint: "Starts with B, like every second Bridgerton.", sourceNote: "S4" },
+    { value: 800, difficultyRank: 4, prompt: "With 147 million views, this film was Netflix's biggest title of the first half of 2026.", answerPrefix: "What is", correctAnswer: "War Machine", acceptedAlternates: [], hint: "Two words: a conflict plus a device.", sourceNote: "H1 2026" },
+    { value: 1000, difficultyRank: 5, prompt: "Tessa Thompson and Jon Bernthal star in this twisty thriller, Netflix's most-watched series of early 2026.", answerPrefix: "What is", correctAnswer: "His & Hers", acceptedAlternates: ["His and Hers", "His n Hers"], hint: "Matching towels often say this.", sourceNote: "H1 2026" },
   ]},
 ];
 
@@ -561,7 +568,7 @@ const normalize = s => String(s || "")
   .replace(/\s+/g, " ")
   .trim();
 const QUESTION_PREFIX = /^(who|what|where|when|which|why|how)s?(\s+(is|are|was|were|does|did|do|has|have|s))?\s+/;
-const ARTICLES = /^(a|an|the)\s+/;
+const ARTICLES = /^((a|an|the)\s+)+/;
 const stripQuestionAndArticles = s => normalize(s).replace(QUESTION_PREFIX, "").replace(ARTICLES, "").trim();
 const isQuestionFormat = raw => /^\s*(who|what|where|when|which|why|how)\b/i.test(raw);
 
@@ -586,8 +593,10 @@ function answerMatches(raw, clue) {
   return candidates.some(c => {
     if (c === user) return true;
     if (/^\d+$/.test(c) || /^\d+$/.test(user)) return false;  // numbers must match exactly
-    const tol = c.length <= 4 ? 0 : c.length <= 8 ? 1 : 2;
-    return levenshtein(user, c) <= tol;
+    const tol = c.length <= 3 ? 0 : c.length <= 6 ? 1 : c.length <= 12 ? 2 : 3;
+    if (levenshtein(user, c) <= tol) return true;
+    // generous: "lady gaga the singer" still counts for "lady gaga"
+    return c.length >= 4 && (" " + user + " ").includes(" " + c + " ");
   });
 }
 const questionForm = clue => `${clue.answerPrefix || "What is"} ${clue.correctAnswer}?`;
@@ -628,10 +637,23 @@ function parseLaunch() {
       out.actor = actor;
     } catch { /* ignore malformed actor */ }
   }
+  // Docebo's Iframe training material / widget: when an OAuth client is selected in its settings,
+  // Docebo appends user_id, username, course_id and course_code (plus auth_code and hash, which
+  // the game ignores). Use them to identify the learner when no xAPI actor was passed.
+  if (!out.actor && (p.get("username") || p.get("user_id"))) {
+    const u = (p.get("username") || "").trim(), id = (p.get("user_id") || "").trim();
+    let parentOrigin = "";
+    try { parentOrigin = new URL(document.referrer).origin; } catch {}
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u)) out.actor = { objectType: "Agent", name: u, mbox: "mailto:" + u.toLowerCase() };
+    else out.actor = { objectType: "Agent", name: u || `User ${id}`, account: { homePage: parentOrigin || "https://learn.netflix.net", name: id || u } };
+  }
+  if (p.get("course_id")) out.courseId = p.get("course_id");
+  if (p.get("course_code")) out.courseCode = p.get("course_code");
   return out;
 }
 const launch = parseLaunch();
-const launchedByLms = !!(launch.endpoint && launch.auth);
+const launchedByLms = !!(launch.endpoint && launch.auth);   // full Tin Can launch: endpoint + credentials supplied
+const lmsActor = !!launch.actor;                             // learner identity supplied (Tin Can launch or Docebo iframe)
 
 /* ============================= xAPI CLIENT ============================ */
 const xapi = {
@@ -659,7 +681,10 @@ const xapi = {
           grouping: [{ id: c.activityId, objectType: "Activity" }],
           category: [{ id: "https://w3id.org/xapi/seriousgames", objectType: "Activity" }],
         },
-        extensions: Object.assign({ [EXT + "app"]: XAPI_DEFAULTS.appName }, extensions || {}),
+        extensions: Object.assign({ [EXT + "app"]: XAPI_DEFAULTS.appName },
+          launch.courseId ? { [EXT + "courseId"]: launch.courseId } : {},
+          launch.courseCode ? { [EXT + "courseCode"]: launch.courseCode } : {},
+          extensions || {}),
       }, extraContext || {}),
       timestamp: new Date().toISOString(),
     };
@@ -776,7 +801,7 @@ function newState() {
     clues: c.clues.slice().sort((a, b) => a.value - b.value),   // always $200 -> $1000 top to bottom
   }));
   return {
-    version: 2,
+    version: 3,
     categories: cats,
     used: {},
     score: 0,
@@ -915,9 +940,14 @@ const UI = {
     $("#sEndpoint").value = settings.endpoint || ""; $("#sKey").value = settings.key || ""; $("#sSecret").value = settings.secret || "";
     $("#sHints").checked = !!settings.hints; $("#sRequireQ").checked = !!settings.requireQuestion; $("#sSound").checked = !!settings.sound;
     $("#sTimer").value = settings.timer; $("#sTimerVal").textContent = settings.timer;
-    $("#lmsNote").hidden = !launchedByLms;
-    ["sName", "sEmail", "sEndpoint", "sKey", "sSecret"].forEach(id => $("#" + id).disabled = launchedByLms);
-    if (launchedByLms) { const c = xapi.config(); $("#sName").value = c.actor.name || ""; $("#sEmail").value = (c.actor.mbox || "").replace("mailto:", ""); $("#sEndpoint").value = c.endpoint; }
+    $("#lmsNote").hidden = !(launchedByLms || lmsActor);
+    $("#lmsNote").textContent = launchedByLms
+      ? "Launched from the LMS: endpoint, credentials and player identity were supplied by Docebo and can't be edited here."
+      : "Player identity was supplied by Docebo (iframe launch). Enter the LRS endpoint and credentials below to enable tracking.";
+    ["sEndpoint", "sKey", "sSecret"].forEach(id => $("#" + id).disabled = launchedByLms);
+    ["sName", "sEmail"].forEach(id => $("#" + id).disabled = lmsActor);
+    if (lmsActor) { const a = xapi.config().actor; $("#sName").value = a.name || ""; $("#sEmail").value = a.mbox ? a.mbox.replace("mailto:", "") : (a.account ? `${a.account.name} @ ${a.account.homePage}` : ""); }
+    if (launchedByLms) $("#sEndpoint").value = xapi.config().endpoint;
     this.updateQueueCount();
   },
   updateQueueCount() { $("#queueCount").textContent = xapi.queue.length; },
@@ -930,7 +960,7 @@ const UI = {
 const Game = {
   start() {
     state = storage.get(STORAGE.state, null);
-    const valid = state && state.version === 2 && Array.isArray(state.categories) && state.categories.length === 6;
+    const valid = state && state.version === 3 && Array.isArray(state.categories) && state.categories.length === 6;
     if (!valid) { state = newState(); save(); xapi.sendInitialized(); }
     UI.renderBoard();
     if (state.completed) { this.showResults(); return; }
@@ -1265,9 +1295,11 @@ $("#scrim").addEventListener("click", () => UI.closeSettings());
 $("#sTimer").addEventListener("input", e => $("#sTimerVal").textContent = e.target.value);
 $("#settingsForm").addEventListener("submit", e => {
   e.preventDefault();
-  if (!launchedByLms) {
+  if (!lmsActor) {
     settings.name = $("#sName").value.trim() || "Player";
     settings.email = $("#sEmail").value.trim() || "player@example.com";
+  }
+  if (!launchedByLms) {
     settings.endpoint = $("#sEndpoint").value.trim();
     settings.key = $("#sKey").value.trim();
     settings.secret = $("#sSecret").value;
